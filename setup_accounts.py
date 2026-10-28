@@ -14,7 +14,8 @@ SCOPES = {
 
 
 def secret(name, value):
-    if shutil.which('gh'):
+    ready = shutil.which('gh') and subprocess.run(['gh', 'auth', 'status'], capture_output=True).returncode == 0
+    if ready:
         subprocess.run(['gh', 'secret', 'set', name, '--repo', REPO], input=value,
                        text=True, check=True, capture_output=True)
     else:
@@ -31,6 +32,7 @@ def secret(name, value):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('account', choices=SCOPES)
+    parser.add_argument('--select-account', action='store_true', help='Show Google account and Brand Account picker')
     parser.add_argument('--client', default='client_secrets.json')
     parser.add_argument('--channel-id', help='Required for YouTube; copy Dudi Dam TV channel ID from Studio')
     args = parser.parse_args()
@@ -43,8 +45,9 @@ def main():
         raise ValueError('Use Desktop OAuth client JSON from the Production project')
     email = 'asifrezan@gmail.com' if args.account == 'youtube' else 'asifrezanit@gmail.com'
     flow = InstalledAppFlow.from_client_config(config, SCOPES[args.account], autogenerate_code_verifier=True)
-    credentials = flow.run_local_server(host='127.0.0.1', port=0, prompt='consent',
-        access_type='offline', login_hint=email, timeout_seconds=1800, open_browser=False)
+    selection = {'prompt': 'consent select_account'} if args.select_account else {'prompt': 'consent', 'login_hint': email}
+    credentials = flow.run_local_server(host='127.0.0.1', port=0,
+        access_type='offline', timeout_seconds=1800, open_browser=False, **selection)
     if not credentials.refresh_token:
         raise RuntimeError('Offline refresh token missing')
     if not set(SCOPES[args.account]).issubset(set(credentials.granted_scopes or credentials.scopes or [])):
@@ -54,6 +57,8 @@ def main():
         channels = api.channels().list(part='id,snippet', mine=True).execute().get('items', [])
         if len(channels) != 1 or channels[0]['id'] != args.channel_id:
             raise RuntimeError('Wrong channel selected; no secrets changed')
+        if channels[0].get('snippet', {}).get('customUrl', '').lower() != '@dudi_dum_tv':
+            raise RuntimeError('Channel handle mismatch; no secrets changed')
         secret('YOUTUBE_TOKEN_JSON', credentials.to_json())
         secret('EXPECTED_CHANNEL_ID', args.channel_id)
         print('Verified channel: ' + channels[0]['snippet']['title'])
@@ -65,7 +70,7 @@ def main():
         if len(folders) > 1:
             raise RuntimeError('Multiple project folders; reconcile manually')
         folder = folders[0] if folders else api.files().create(body={
-            'name': 'Dudi Dam TV - Kids Rhyme Automation',
+            'name': 'Dudi Dum TV - Kids Rhyme Automation',
             'mimeType': 'application/vnd.google-apps.folder',
             'appProperties': {'dudi_dam_tv_root': 'v1'}}, fields='id').execute()
         secret('DRIVE_TOKEN_JSON', credentials.to_json())

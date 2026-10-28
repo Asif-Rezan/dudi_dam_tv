@@ -1,4 +1,4 @@
-"""Hindi song -> ACE-Step 1.5 -> HD visualizer -> verified public YouTube video."""
+"""Kids rhyme -> CPU synthesis -> scene video -> verified YouTube publication."""
 import argparse
 import datetime as dt
 import hashlib
@@ -120,15 +120,15 @@ def publish(client, root, song, state, save):
     if not state.get('video_id'):
         if state.get('upload_started'):
             raise RuntimeError('Ambiguous upload; reconcile YouTube before retry to avoid duplicates')
+        from upload_settings import load_settings, upload_body
+        settings = load_settings()
         state['upload_description'] = upload_description(song)
+        state['upload_settings'] = settings
+        state['upload_body'] = upload_body(song, state['upload_description'], metadata_tags(song), settings)
         state['upload_started'] = True
         save()
-        request = client.videos().insert(part='snippet,status', body={
-            'snippet': {'title': song['title'], 'description': state['upload_description'],
-                'categoryId': '10', 'defaultLanguage': 'en', 'defaultAudioLanguage': 'en',
-                'tags': metadata_tags(song)},
-            'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': True,
-                       'containsSyntheticMedia': True}},
+        request = client.videos().insert(part='snippet,status,paidProductPlacementDetails',
+            body=state['upload_body'], notifySubscribers=state['upload_settings']['notify_subscribers'],
             media_body=MediaFileUpload(str(root/'video.mp4'), resumable=True, chunksize=8*1024*1024))
         result = None
         while result is None:
@@ -142,20 +142,15 @@ def publish(client, root, song, state, save):
         save()
     deadline = time.monotonic() + 1800
     while time.monotonic() < deadline:
-        items = client.videos().list(part='snippet,status,processingDetails,contentDetails',
+        items = client.videos().list(part='snippet,status,processingDetails,contentDetails,paidProductPlacementDetails',
                                     id=state['video_id']).execute().get('items', [])
         if not items:
             raise RuntimeError('Uploaded video unavailable')
         video = items[0]
-        if video['snippet']['channelId'] != required('EXPECTED_CHANNEL_ID'):
-            raise RuntimeError('Uploaded channel mismatch')
-        status = video['status']
-        if status.get('uploadStatus') in ('failed', 'rejected', 'deleted'):
-            raise RuntimeError('YouTube rejected upload')
-        if status.get('privacyStatus') != 'public':
-            raise RuntimeError('YouTube did not retain public visibility; inspect project/channel restrictions')
-        if status.get('uploadStatus') == 'processed' and video.get('contentDetails', {}).get('definition') == 'hd':
-            state['phase'] = 'published'
+        from upload_settings import verified_phase
+        phase = verified_phase(video, state['upload_body'], required('EXPECTED_CHANNEL_ID'))
+        if phase:
+            state['phase'] = phase
             save()
             return
         time.sleep(20)
@@ -173,15 +168,17 @@ def run(run_id, defer_drive_cleanup=False):
     state = store.load(key, {})
     save = lambda: store.save(key, state)
     history = store.load('history.json', [])
-    if state.get('phase') == 'published':
+    if state.get('phase') in ('published', 'scheduled'):
+        if state['phase'] == 'scheduled':
+            publish(client, root, state['song'], state, save)
         if not any(h['run'] == run_id for h in history):
             history.append({'run': run_id, 'title': state['song']['title'],
                             'hash': state['hash'], 'video_id': state['video_id']})
             store.save('history.json', history)
-        if not defer_drive_cleanup:
+        if not defer_drive_cleanup and state['phase'] == 'published':
             from cleanup_drive import cleanup
             cleanup(store, client, run_id, state)
-        print('Already published: ' + state['video_id'])
+        print(state['phase'] + ': ' + state['video_id'])
         return
     if not state.get('song'):
         day = dt.datetime.now(ZoneInfo('Asia/Dhaka')).date().isoformat()
@@ -222,7 +219,7 @@ def run(run_id, defer_drive_cleanup=False):
     if not any(h['run'] == run_id for h in history):
         history.append({'run': run_id, 'title': song['title'], 'hash': state['hash'], 'video_id': state['video_id']})
         store.save('history.json', history)
-    if not defer_drive_cleanup:
+    if not defer_drive_cleanup and state['phase'] == 'published':
         from cleanup_drive import cleanup
         cleanup(store, client, run_id, state)
     print(json.dumps({'phase': state['phase'], 'video_id': state['video_id']}))

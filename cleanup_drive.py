@@ -87,6 +87,9 @@ def main():
     from pipeline import youtube_client
     store = Store()
     state = store.load(f'runs/{args.run_id}/state.json', {})
+    if state.get('phase') == 'scheduled':
+        print('Scheduled video: preserve Drive media until public publication is verified.')
+        return
     cleanup(store, youtube_client(), args.run_id, state)
 
 
