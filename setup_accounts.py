@@ -8,7 +8,7 @@ from pathlib import Path
 
 REPO = 'Asif-Rezan/dudi_dam_tv'
 SCOPES = {
-    'youtube': ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly'],
+    'youtube': ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly', 'https://www.googleapis.com/auth/youtube.force-ssl'],
     'drive': ['https://www.googleapis.com/auth/drive.file'],
 }
 

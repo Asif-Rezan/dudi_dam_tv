@@ -134,7 +134,10 @@ def publish(client, root, song, state, save):
         while result is None:
             _, result = request.next_chunk(num_retries=5)
         state['video_id'] = result['id']
+        state['upload_completed_at'] = dt.datetime.now(dt.timezone.utc).isoformat()
         save()
+    from upload_settings import schedule_uploaded_video
+    schedule_uploaded_video(client, state, save)
     if not state.get('thumbnail_uploaded'):
         client.thumbnails().set(videoId=state['video_id'],
             media_body=MediaFileUpload(str(root/'thumbnail.jpg'))).execute()

@@ -10,6 +10,8 @@ from pipeline import youtube_client
 def verify():
     for name in ('YOUTUBE_TOKEN_JSON','DRIVE_TOKEN_JSON'):
         credentials = Credentials.from_authorized_user_info(json.loads(required(name)))
+        if name == 'YOUTUBE_TOKEN_JSON' and not credentials.has_scopes(['https://www.googleapis.com/auth/youtube.force-ssl']):
+            raise RuntimeError('YouTube scheduling update permission missing')
         if not credentials.refresh_token:
             raise RuntimeError('Offline refresh token missing')
         credentials.refresh(Request())

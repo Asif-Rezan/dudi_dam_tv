@@ -14,12 +14,12 @@ on:
         options:
           - female
       upload_mode:
-        description: Publish publicly now or schedule publication
+        description: Default schedule is first 6AM New York slot at least 72h after upload
         type: choice
-        default: public
+        default: scheduled
         options: [public, scheduled]
       publish_at:
-        description: Scheduled ISO time with timezone, e.g. 2026-11-01T18:00:00+06:00
+        description: Leave empty for automatic 72h wait then 6AM New York; optional ISO override
         required: false
         type: string
       video_language:
@@ -254,7 +254,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      UPLOAD_MODE: ${{ inputs.upload_mode || 'public' }}
+      UPLOAD_MODE: ${{ inputs.upload_mode || 'scheduled' }}
       PUBLISH_AT: ${{ inputs.publish_at }}
       VIDEO_LANGUAGE: ${{ inputs.video_language || 'en' }}
       AUDIO_LANGUAGE: ${{ inputs.audio_language || 'en' }}

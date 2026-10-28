@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+from zoneinfo import ZoneInfo
 
 SETTINGS = Path(__file__).with_name('upload_settings.json')
 
@@ -28,7 +29,10 @@ def load_settings(now=None):
         raise ValueError('Kids and AI disclosures are required for this pipeline')
     if settings['license'] not in ('youtube','creativeCommon'):
         raise ValueError('Invalid license')
-    if settings['mode'] == 'scheduled':
+    if settings['mode'] == 'scheduled' and not settings.get('publish_at'):
+        if settings.get('schedule_policy') != 'new_york_6am_after_72h':
+            raise ValueError('Automatic schedule policy missing')
+    elif settings['mode'] == 'scheduled':
         when = dt.datetime.fromisoformat((settings.get('publish_at') or '').replace('Z','+00:00'))
         if when.tzinfo is None or when <= (now or dt.datetime.now(dt.timezone.utc)):
             raise ValueError('Scheduled publication needs a future ISO timestamp with timezone')
@@ -42,11 +46,52 @@ def upload_body(song, description, tags, settings):
     status = dict(privacyStatus='private' if settings['mode']=='scheduled' else 'public',
         selfDeclaredMadeForKids=settings['made_for_kids'], containsSyntheticMedia=settings['contains_synthetic_media'],
         license=settings['license'], embeddable=settings['embeddable'], publicStatsViewable=settings['public_stats_viewable'])
-    if settings['mode']=='scheduled':
+    if settings['mode']=='scheduled' and settings.get('publish_at'):
         status['publishAt'] = settings['publish_at']
     return dict(snippet=dict(title=song['title'],description=description,tags=tags,
         categoryId=settings['category_id'],defaultLanguage=settings['language'],defaultAudioLanguage=settings['audio_language']),
         status=status, paidProductPlacementDetails=dict(hasPaidProductPlacement=settings['paid_product_placement']))
+
+
+def new_york_publish_time(upload_finished):
+    """First 06:00 America/New_York slot at least 72 elapsed hours after upload."""
+    if upload_finished.tzinfo is None:
+        raise ValueError('Upload completion must include a timezone')
+    earliest = upload_finished.astimezone(dt.timezone.utc) + dt.timedelta(hours=72)
+    zone = ZoneInfo('America/New_York')
+    local_day = earliest.astimezone(zone).date()
+    candidate = dt.datetime.combine(local_day, dt.time(6), tzinfo=zone)
+    if candidate.astimezone(dt.timezone.utc) < earliest:
+        candidate = dt.datetime.combine(local_day+dt.timedelta(days=1),dt.time(6),tzinfo=zone)
+    return candidate.astimezone(dt.timezone.utc).isoformat().replace('+00:00','Z')
+
+
+def schedule_uploaded_video(client, state, save, now=None):
+    """Upload privately, then set a stable post-upload schedule; retries reuse it."""
+    settings = state['upload_settings']
+    if settings['mode'] != 'scheduled' or settings.get('publish_at') or state.get('schedule_configured'):
+        return
+    if settings.get('schedule_policy') != 'new_york_6am_after_72h':
+        raise ValueError('Unsupported automatic schedule policy')
+    if not state.get('video_id'):
+        raise ValueError('Upload must complete before scheduling')
+    current = now or dt.datetime.now(dt.timezone.utc)
+    # When recovering an upload checkpoint without a timestamp, using now is a
+    # conservative upper bound: it can delay release, never shorten the 72h wait.
+    if not state.get('upload_completed_at'):
+        state['upload_completed_at'] = current.isoformat()
+    if not state.get('schedule_target'):
+        finished = dt.datetime.fromisoformat(state['upload_completed_at'].replace('Z','+00:00'))
+        state['schedule_target'] = new_york_publish_time(finished)
+        state['upload_body']['status']['publishAt'] = state['schedule_target']
+        save()  # Freeze the target before mutating YouTube so retries cannot drift.
+    expected = state['schedule_target']
+    if dt.datetime.fromisoformat(expected.replace('Z','+00:00')) <= current:
+        raise RuntimeError('Unconfirmed schedule is in the past; reconcile the existing video')
+    client.videos().update(part='status', body={'id':state['video_id'],
+        'status':state['upload_body']['status']}).execute()
+    state['schedule_configured'] = True
+    save()
 
 
 def verified_phase(video, body, channel_id):

@@ -1,5 +1,5 @@
 {
-  "mode": "public",
+  "mode": "scheduled",
   "publish_at": null,
   "language": "en",
   "audio_language": "en",
@@ -10,5 +10,6 @@
   "embeddable": true,
   "public_stats_viewable": true,
   "notify_subscribers": true,
-  "paid_product_placement": false
+  "paid_product_placement": false,
+  "schedule_policy": "new_york_6am_after_72h"
 }
