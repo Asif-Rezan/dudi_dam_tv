@@ -11,6 +11,17 @@ from pipeline import validate_song, validate_duration
 from song_images import image_plan, generate_song_images
 
 class KidsTests(unittest.TestCase):
+    def setUp(self):
+        def written(day,identity,seconds,history,draft_path=None):
+            return dict(writer_version='qwen-kids-original-v1',outline=dict(title='Duck and Bunny Find a Rainbow',
+                description='A new playful story about two kind animal friends discovering a garden rainbow.',
+                story_summary='Duck and bunny follow a bright rainbow through the garden.'),
+                sections=[[dict(lyric=f'Friendly ducks discover garden number {i}',visual=f'Duckling and bunny exploring flower patch {i}')
+                           for i in range((seconds+9)//10)]])
+        model=patch('kids_rhymes.write_rhyme',side_effect=written)
+        model.start()
+        self.addCleanup(model.stop)
+
     def song(self, seconds=600):
         with patch.dict(os.environ, VIDEO_DURATION_SECONDS=str(seconds)):
             return kids.make_song('2026-10-28', [], generation_id='test')

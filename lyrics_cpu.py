@@ -138,8 +138,7 @@ def request_story(endpoint, payload):
                 correction += ' Shorten prose and lyric lines so the entire JSON fits the output budget.'
             messages.append({'role': 'user', 'content': correction +
                 ' Regenerate the complete JSON matching the supplied schema. Follow every field length limit. '
-                'Only sung lyrics must be Hindi Devanagari; thumbnail_text and image prompts must follow '
-                'their own ASCII/English rules. Do not add fields or commentary.'})
+                'Follow the original task language requirements for every field. Do not add fields or commentary.'})
             continue
         print(json.dumps({'check': 'Qwen lyrics JSON', 'passed': True,
             'seconds': round(time.monotonic() - started, 1),

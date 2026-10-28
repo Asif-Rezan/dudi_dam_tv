@@ -5,8 +5,8 @@ Copied from [Heart-and-Mind](https://github.com/Asif-Rezan/Heart-and-Mind) at `0
 ## Current behavior
 
 - Default: 600 seconds. Set `VIDEO_DURATION_SECONDS` to 480–720 in five-second steps.
-- Sweet adult female singing voice requested, English action verses alternating with **dudi dudi dam dam dudi dudi dam**. This phrase is a sung refrain, not musical chord notation.
-- Six friendly themes: gardens, rainbows, animals, bubbles, ocean and bedtime. The run ID rotates the opening theme. Planning is local and deterministic; no lyric model or credentials required.
+- Sweet adult female singing voice requested, original AI-written English verses alternating with **dudi dudi dam dam dudi dudi dam**. This phrase is a sung refrain, not musical chord notation.
+- The first lyrics job runs the pinned local Qwen3-4B CPU model to write a fresh adventure outline, new English verses, and matching visual descriptions. Only the Dudi refrain is fixed. There is no template fallback. Each run ID uses a different generation seed.
 - A new SSD-1B cartoon illustration for every five seconds (96–144 images), plus a thumbnail. Sixteen image workers split generation and checkpoint each completed image.
 - ACE-Step generates separate sections up to 120 seconds, then FFmpeg joins them. Music is not looped or padded. Short or incorrectly sized sections fail. Section joins and voice/character consistency need listening/viewing review.
 - A 30-second excerpt of the user-supplied MP3 is included at `assets/reference/style-reference.mp3`; the full original is not committed. The pinned API exposes `reference_audio`. Inference receives the excerpt for style conditioning; actual influence and singing quality require a model run. Set `REFERENCE_AUDIO_PATH` to a different local file or leave unset to generate without conditioning. Use reference material you have permission to use.
@@ -14,16 +14,17 @@ Copied from [Heart-and-Mind](https://github.com/Asif-Rezan/Heart-and-Mind) at `0
 
 ## Generate before connecting Google
 
-Run **Dudi Dam TV kids rhyme generation** from GitHub Actions with a new `run_id`. No YouTube or Drive credentials are needed for generation/rendering. Download `kids-video-RUN_NUMBER` for the MP4, thumbnail and song/storyboard JSON. Generation is computationally expensive and has not yet been verified end to end on Actions. Existing model revisions and CPU dependencies come from the reference; 120-second sections reload the model for bounded worker isolation. Model memory/time limits may require a larger runner.
+Run **Dudi Dam TV kids rhyme generation** from GitHub Actions with a new `run_id`. The lyrics job checks and reserves lyric originality in private Drive history; connected Drive credentials are required for the production workflow. Local generation without history can run without Google credentials. Download `kids-video-RUN_NUMBER` for the MP4, thumbnail and song/storyboard JSON. Generation is computationally expensive and has not yet been verified end to end on Actions. Existing model revisions and CPU dependencies come from the reference; 120-second sections reload the model for bounded worker isolation. Model memory/time limits may require a larger runner.
 
 Automatic scheduling is off unless repository variable `AUTOMATION_ENABLED=true`. Publishing requires `PUBLISH_ENABLED=true`. The scheduled time inherited from the reference is 03:00 Asia/Dhaka. The workflow defaults to 600 seconds; adjust `VIDEO_DURATION_SECONDS` in its workflow-level env for other durations.
 
-For local planning:
+For local AI lyric writing (downloads the pinned Qwen GGUF model):
 
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
+pip install -r requirements-lyrics.txt
 python prepare_music.py --run-id first-rhyme --stage lyrics
 ```
 
@@ -65,3 +66,10 @@ Every five-second lyric scene now has continuous 25 fps camera motion: gentle al
 This gives still illustrations a lively storybook presentation; it does not rig character limbs or lip-sync mouths. Motion follows the requested 100 BPM arrangement as a visual guide, not measured audio beats. Full videos remain 1920×1080 and 8–12 minutes, with a new illustration every five seconds. Rendering is split into small clips to bound memory. `render-state.json` fingerprints the renderer version and inputs so an old static video is regenerated automatically.
 
 For a local short preview without model inference or publishing, run `python preview_motion.py image1.png image2.png --audio song.wav --output output/motion-preview.mp4`. Preview images/audio are supplied locally and are never used as a production fallback.
+
+
+## Fresh AI lyrics on each new run
+
+`rhyme_writer.py` calls the pinned Qwen CPU model first for an original episode outline/title/description, then for new five-second verse lines and corresponding scene actions in chapters up to two minutes long. A 10-minute episode has 60 original lines alternating with 60 fixed Dudi refrain lines. Drafts checkpoint after the outline and each chapter; retries with the same run ID resume that story. Use a new run ID to request a new song.
+
+Normalized verse lines and four-word phrase overlap are checked against `lyrics-history.json` in the private Drive folder, excluding the shared refrain. New lyric identities are reserved before music/image jobs start, including scheduled or unfinished episodes. Repeated or overly similar verses trigger rewriting, then failure if the bounded retries cannot produce a valid result. This is a practical duplicate check, not a guarantee that every possible phrase is globally unique. The workflow installs `requirements-lyrics.txt` and allows 90 minutes for CPU writing; it never substitutes the former template verses on model failure.

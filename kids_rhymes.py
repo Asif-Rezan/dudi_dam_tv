@@ -7,15 +7,7 @@ from pathlib import Path
 import subprocess
 
 REFRAIN = 'dudi dudi dam dam dudi dudi dam'
-# Each action has its own matching lyric and picture; the refrain remains constant.
-THEMES = (
-    ('Sunny Garden', 'a sunny flower garden', ('clap hands', 'wave hello', 'tiptoe', 'smell flowers')),
-    ('Rainbow Friends', 'a rainbow meadow', ('point to red flowers', 'wave blue ribbons', 'clap hands', 'twirl gently')),
-    ('Animal Parade', 'a friendly farm', ('waddle with ducklings', 'hop with bunnies', 'wave to lambs', 'clap hands')),
-    ('Bubble Party', 'a pastel bubble playground', ('blow bubbles', 'reach up', 'wave hello', 'twirl gently')),
-    ('Ocean Dance', 'a gentle seaside with smiling sea animals', ('wave like fish', 'sway gently', 'clap hands', 'tiptoe')),
-    ('Starry Goodnight', 'a cozy moonlit nursery', ('hug a teddy', 'wave goodnight', 'sway gently', 'close sleepy eyes')),
-)
+from rhyme_writer import write_rhyme
 
 def make_song(day, history, draft_path=None, generation_id=None, vocal_gender_override='female'):
     if vocal_gender_override not in ('auto', 'female'):
@@ -24,23 +16,24 @@ def make_song(day, history, draft_path=None, generation_id=None, vocal_gender_ov
     if not 480 <= seconds <= 720 or seconds % 5:
         raise ValueError('VIDEO_DURATION_SECONDS must be 480-720, in five-second steps')
     identity = generation_id or day
-    offset = int(hashlib.sha256(identity.encode()).hexdigest()[:8], 16) % len(THEMES)
+    written = write_rhyme(day, identity, seconds, history, draft_path)
     scenes = []
-    for i in range(seconds // 5):
-        name, setting, actions = THEMES[(i // 12 + offset) % len(THEMES)]
-        action = actions[(i // 2) % len(actions)]
-        lyric = REFRAIN if i % 2 else f'Little friends, {action}, happy smiles for you and me'
-        scenes.append(dict(index=i, start=i*5, end=(i+1)*5, lyric=lyric,
-            prompt=f'Cute colorful 3D storybook cartoon. Same fluffy yellow duck and white bunny friends {action} in {setting}. Rounded shapes, cheerful gentle expressions, bright pastel colors, wide landscape, no text.'))
-    song = dict(title=f'Dudi Dudi Dam Dam | {THEMES[offset][0]} | Kids Dance {identity}'[:100],
-        lyrics='\n'.join(scene['lyric'] for scene in scenes), duration=seconds,
+    for section in written['sections']:
+        for row in section:
+            prompt=('Cute colorful 3D storybook cartoon. Same fluffy yellow duckling and white bunny. '
+                + row['visual'] + ' Rounded shapes, cheerful gentle expressions, bright pastel colors, wide landscape, no text.')
+            for lyric in (row['lyric'], REFRAIN):
+                i=len(scenes)
+                scenes.append(dict(index=i,start=i*5,end=(i+1)*5,lyric=lyric,prompt=prompt))
+    scenes=scenes[:seconds//5]
+    outline=written['outline']
+    song = dict(title=outline['title'], lyrics='\n'.join(scene['lyric'] for scene in scenes),duration=seconds,
         prompt='Joyful nursery rhyme, cute sweet adult female singing voice, clear English diction, playful dudi dudi dam dam refrain, major key, 100 BPM, ukulele, xylophone, soft handclaps, gentle bass, warm child-friendly mix, no shouting.',
-        description='Sing and dance with Dudi Dam TV! Friendly cartoon animals explore colors, nature and gentle movement with the Dudi Dudi Dam Dam refrain.',
-        vocal_gender='female', song_date=day, scenes=scenes,
-        tags=['Dudi Dam TV', 'kids rhymes', 'nursery rhymes', 'Dudi Dudi Dam Dam', 'kids dance'])
+        description=outline['description'],story_summary=outline['story_summary'],
+        lyric_writer=dict(backend='local-qwen-cpu',version=written['writer_version'],novelty_checked=True),
+        vocal_gender='female',song_date=day,scenes=scenes,
+        tags=['Dudi Dam TV','kids rhymes','nursery rhymes','Dudi Dudi Dam Dam','kids dance'])
     validate_storyboard(song)
-    if draft_path:
-        Path(draft_path).write_text(json.dumps(song, indent=2))
     return song
 
 

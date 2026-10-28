@@ -26,19 +26,17 @@ def prepare(run_id, stage='all', check_history=False, vocal_gender='female'):
         temporary.write_text(json.dumps(state))
         temporary.replace(checkpoint)
     history = []
+    lyric_history = []
+    store = None
     if check_history:
         from storage import Store
         print(json.dumps({'phase': 'verify publication history'}), flush=True)
-        history = Store().load('history.json', [])
+        store = Store()
+        history = store.load('history.json', [])
+        lyric_history = store.load('lyrics-history.json', [])
+        history += lyric_history
         # A rerun of an already published identity must resume, not regenerate it.
         history = [entry for entry in history if entry.get('run') != run_id]
-    if check_history and (root/'song.json').exists():
-        existing = validate_song(json.loads((root/'song.json').read_text()))
-        if song_duplicate_reason(existing, history):
-            core = {key: existing[key] for key in ('title', 'lyrics', 'prompt', 'duration', 'vocal_gender', 'song_date')
-                    if key in existing}
-            (root/'song-draft.json').write_text(json.dumps(core, ensure_ascii=False))
-            (root/'song.json').unlink()
     if (root/'song.json').exists():
         song = validate_song(json.loads((root/'song.json').read_text()))
     else:
@@ -47,6 +45,20 @@ def prepare(run_id, stage='all', check_history=False, vocal_gender='female'):
     if vocal_gender != 'auto' and song.get('vocal_gender') != vocal_gender:
         raise ValueError('Saved song voice differs from the request; use a new run ID')
     if stage == 'lyrics':
+        from rhyme_writer import VERSION, verse_lines, novelty_reason
+        if song.get('lyric_writer', {}).get('version') != VERSION:
+            raise ValueError('Saved lyrics use the old template writer; use a new run ID')
+        lines = verse_lines(song)
+        reason = novelty_reason(lines, history)
+        if reason or song_duplicate_reason(song, history):
+            from pipeline import DuplicateSongError
+            raise DuplicateSongError()
+        if store:
+            entry = dict(run=run_id, title=song['title'], story_summary=song['story_summary'],
+                verse_lines=lines, hash=__import__('hashlib').sha256(song['lyrics'].encode()).hexdigest())
+            lyric_history = [h for h in lyric_history if h.get('run') != run_id]
+            lyric_history.append(entry)
+            store.save('lyrics-history.json', lyric_history)
         print(json.dumps({'phase':'lyrics ready', 'run_id':run_id}), flush=True)
         return
     import lyrics_cpu

@@ -53,7 +53,7 @@ jobs:
   lyrics:
     if: github.event_name == 'workflow_dispatch' || vars.AUTOMATION_ENABLED == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 90
     outputs:
       run_id: ${{ steps.identity.outputs.run_id }}
       restore_artifacts: ${{ steps.recovery.outputs.artifact_names || '[]' }}
@@ -78,7 +78,7 @@ jobs:
           RUN_ID="${REQUESTED_RUN_ID:-daily-$(TZ=Asia/Dhaka date +%F)}"
           [[ "$RUN_ID" =~ ^[a-zA-Z0-9_-]{1,80}$ ]] || exit 1
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt -r requirements-lyrics.txt
       - run: python -m unittest -v
       - name: Find available recovery checkpoints
         id: recovery
@@ -114,12 +114,12 @@ jobs:
           run-id: ${{ inputs.prepared_run }}
           github-token: ${{ github.token }}
           path: output/
-      - name: Prepare kids rhyme and five-second storyboard
+      - name: Write original AI kids lyrics and five-second storyboard
         env:
           SONG_RUN_ID: ${{ steps.identity.outputs.run_id }}
           DRIVE_TOKEN_JSON: ${{ secrets.DRIVE_TOKEN_JSON }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
-        run: python -u prepare_music.py --run-id "$SONG_RUN_ID" --stage lyrics --vocal-gender "$REQUESTED_VOCAL_GENDER"
+        run: python -u prepare_music.py --run-id "$SONG_RUN_ID" --stage lyrics --check-history --vocal-gender "$REQUESTED_VOCAL_GENDER"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
