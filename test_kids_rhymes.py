@@ -45,8 +45,8 @@ class KidsTests(unittest.TestCase):
         def fake_generate(prompt,target,**kwargs):
             Image.new('RGB',(32,18),'yellow').save(target)
         with tempfile.TemporaryDirectory() as tmp, patch('image_cpu.generate',side_effect=fake_generate) as generate:
-            for shard in range(12):
-                with patch.dict(os.environ, IMAGE_SHARD=str(shard),IMAGE_SHARDS='12'):
+            for shard in range(16):
+                with patch.dict(os.environ, IMAGE_SHARD=str(shard),IMAGE_SHARDS='16'):
                     generate_song_images(tmp,self.song(720))
                     generate_song_images(tmp,self.song(720))
             self.assertEqual(generate.call_count,145)

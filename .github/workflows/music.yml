@@ -182,10 +182,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     env:
       IMAGE_SHARD: ${{ matrix.shard }}
-      IMAGE_SHARDS: '12'
+      IMAGE_SHARDS: '16'
       SONG_RUN_ID: ${{ needs.lyrics.outputs.run_id }}
       CUDA_VISIBLE_DEVICES: ''
       OMP_NUM_THREADS: '4'
