@@ -24,6 +24,26 @@ def pipeline_failure_message(error):
     from lyrics_cpu import StoryGenerationError
     if isinstance(error,StoryGenerationError):
         return 'Pipeline failed ['+error.code+']: '+str(error)+' Details: '+json.dumps(error.details,sort_keys=True)
+    # Only expose exact, locally authored messages; API bodies may contain secrets.
+    safe_errors = {
+        'Wrong YouTube channel; select Dudi Dam TV',
+        'Ambiguous upload; reconcile YouTube before retry to avoid duplicates',
+        'Uploaded video unavailable',
+        'Wrong Drive account',
+        'DRIVE_FOLDER_ID is required for this separate channel',
+        'DRIVE_FOLDER_ID must identify the dedicated Dudi Dam TV folder',
+        'Workflow storage must be private to its owner',
+        'Duplicate checkpoint files require reconciliation',
+        'Cannot verify free storage allowance; stop before upload',
+        'Free storage allowance nearly full; no paid upgrade will be requested',
+        'Drive upload identity mismatch; refusing overwrite',
+        'Drive file ID differs from reserved upload identity',
+        'Drive upload checksum or size verification failed',
+        'Drive creation conflict; refusing overwrite',
+        'Drive download checksum or size verification failed',
+    }
+    if type(error) is RuntimeError and str(error) in safe_errors:
+        return 'Pipeline failed [publication_guard]: ' + str(error)
     return ('Pipeline failed: ' + type(error).__name__ +
             '. Inspect checkpoint and configuration.')
 
@@ -169,6 +189,7 @@ def run(run_id, defer_drive_cleanup=False):
         raise ValueError('Invalid run ID')
     root = Path('output')/run_id
     root.mkdir(parents=True, exist_ok=True)
+    print(json.dumps({'phase':'verify publication accounts'}),flush=True)
     store = Store()
     client = youtube_client()  # Verify accounts before expensive generation.
     key = f'runs/{run_id}/state.json'
@@ -207,6 +228,7 @@ def run(run_id, defer_drive_cleanup=False):
             generate(song, root/'song.wav', state, save)
     validate_duration(duration(root/'song.wav'))
     if not state.get('video_id'):
+        print(json.dumps({'phase':'back up audio'}),flush=True)
         store.upload(root/'song.wav', f'runs/{run_id}/song.wav')
         if not render_is_current(root):
             from song_images import generate_song_images
@@ -219,9 +241,11 @@ def run(run_id, defer_drive_cleanup=False):
                 archive.add(path, arcname=path.name)
         for name in ('render-state.json', 'storyboard.tar.gz', 'song.json', 'video.mp4', 'thumbnail.jpg', 'background-source.png', 'thumbnail-source.png', 'image-manifest.json'):
             if (root/name).exists():
+                print(json.dumps({'phase':'back up media','file':name}),flush=True)
                 store.upload(root/name, f'runs/{run_id}/{name}')
     elif not (root/'thumbnail.jpg').exists():
         store.download(store.find(f'runs/{run_id}/thumbnail.jpg'), root/'thumbnail.jpg')
+    print(json.dumps({'phase':'upload or verify YouTube video'}),flush=True)
     publish(client, root, song, state, save)
     if not any(h['run'] == run_id for h in history):
         history.append({'run': run_id, 'title': song['title'], 'hash': state['hash'], 'video_id': state['video_id']})
