@@ -91,6 +91,22 @@ def prepare(run_id, stage='all', check_history=False, vocal_gender='female'):
     print(json.dumps({'run_id': run_id, 'phase': 'prepared', 'title': song['title'],
         'duration': duration(root/'video.mp4')}), flush=True)
 
+def record_failure(run_id,stage,error):
+    """Persist safe diagnostics even if the first model response never completed."""
+    if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}',run_id):
+        return
+    root=Path('output')/run_id
+    root.mkdir(parents=True,exist_ok=True)
+    info={'stage':stage,'error_type':type(error).__name__,
+        'error_code':getattr(error,'code','pipeline_error'),
+        'retryable':getattr(error,'retryable',False),
+        'details':getattr(error,'details',{}),
+        'message':pipeline_failure_message(error)}
+    temp=root/'failure.tmp'
+    temp.write_text(json.dumps(info,indent=2))
+    temp.replace(root/'failure.json')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--run-id', required=True)
@@ -102,5 +118,9 @@ if __name__ == '__main__':
     try:
         prepare(args.run_id, args.stage, check_history=args.check_history, vocal_gender=args.vocal_gender)
     except Exception as error:
+        try:
+            record_failure(args.run_id,args.stage,error)
+        except OSError:
+            print("Could not save failure checkpoint; original failure follows.",flush=True)
         print(pipeline_failure_message(error), flush=True)
         raise SystemExit(1)

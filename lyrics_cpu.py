@@ -3,6 +3,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import time
 
@@ -18,7 +19,46 @@ _model = None
 
 
 class StoryGenerationError(RuntimeError):
-    """Only static, privacy-safe messages may be emitted in public job logs."""
+    """Static message plus safe structured diagnostics; never raw model/API text."""
+    def __init__(self, message, *, code='lyrics_generation', details=None, retryable=False):
+        super().__init__(message)
+        self.code=code
+        self.details=details or {}
+        self.retryable=retryable
+
+
+def bounded_metadata(data, schema, fields):
+    """Constrain opted-in display prose, never truncate sung lyrics or scene actions."""
+    result=copy.deepcopy(data)
+    changed=[]
+    if not isinstance(result,dict):
+        return result,changed
+    for field in fields:
+        # Only known non-lyrical packaging is permitted, even if callers opt in.
+        if field not in ('description', 'title') or not isinstance(result.get(field),str):
+            continue
+        spec=schema.get('properties',{}).get(field,{})
+        maximum=spec.get('maxLength')
+        if type(maximum) is not int or maximum<1:
+            continue
+        value=' '.join(result[field].split())
+        if len(value)<=maximum:
+            result[field]=value
+            continue
+        prefix=value[:maximum]
+        if field=='description':
+            stops=[m.end() for m in re.finditer(r'[.!?](?=\s|$)',prefix)]
+            minimum=max(spec.get('minLength',0),maximum//2)
+            if stops and stops[-1]>=minimum:
+                value=prefix[:stops[-1]]
+            else:
+                value=prefix.rsplit(' ',1)[0].rstrip(' ,;:')
+                value=value[:maximum-1].rstrip(' ,;:.')+'.'
+        else:
+            value=prefix if len(value)==maximum or value[maximum].isspace() else prefix.rsplit(' ',1)[0]
+        result[field]=value
+        changed.append(field)
+    return result,changed
 
 
 def verify_model(path):
@@ -93,12 +133,11 @@ def request_story(endpoint, payload):
     if type(seed) is not int or not 0 <= seed <= 2**31 - 3:
         raise StoryGenerationError('Lyrics seed must be a nonnegative 31-bit integer')
     model = load_model()
-    # Include chat markers and the BOS token in the conservative context allowance.
-    prompt_tokens = sum(len(model.tokenize(message['content'].encode(), add_bos=False)) + 16
-                        for message in messages) + 32
-    if prompt_tokens + limit > CONTEXT_TOKENS:
-        raise StoryGenerationError('Qwen context budget exceeded; reduce recent-story context')
     for attempt in range(3):
+        # Retry instructions also consume context; check before every inference.
+        prompt_tokens=sum(len(model.tokenize(message['content'].encode(),add_bos=False))+16 for message in messages)+32
+        if prompt_tokens+limit>CONTEXT_TOKENS:
+            raise StoryGenerationError('Qwen context budget exceeded; reduce recent-story context',code='lyrics_context')
         started = time.monotonic()
         try:
             result = model.create_chat_completion(messages=messages,
@@ -108,13 +147,19 @@ def request_story(endpoint, payload):
         except Exception:
             # Runtime/configuration errors are not content errors; don't spin on them.
             raise StoryGenerationError('Qwen CPU generation failed; inspect runner memory and runtime compatibility') from None
-        issue, field, bound = None, '$', None
+        issue, field, bound, actual = None, '$', None, None
         try:
             choice = result['choices'][0]
             if choice.get('finish_reason') != 'stop':
                 issue = 'incomplete_output'
                 raise ValueError('Incomplete output')
-            validator.validate(json.loads(choice['message']['content']))
+            original=json.loads(choice['message']['content'])
+            candidate,adjusted=bounded_metadata(original,schema,payload.get('bounded_metadata_fields',[]))
+            validator.validate(candidate)
+            if candidate != original:
+                choice['message']['content']=json.dumps(candidate,ensure_ascii=False)
+            if adjusted:
+                print(json.dumps({'check':'metadata length normalized','fields':adjusted}),flush=True)
         except ValidationError as error:
             issue = error.validator
             path = list(error.absolute_path)
@@ -122,18 +167,23 @@ def request_story(endpoint, payload):
                 field = path[0]
             if isinstance(error.validator_value, int):
                 bound = error.validator_value
+            if isinstance(error.instance,(str,list,dict)):
+                actual=len(error.instance)
         except (ValueError, TypeError, KeyError, IndexError):
             issue = issue or 'invalid_json_or_response'
         if issue:
             # Report schema constraints and counters, never generated content or raw errors.
             print(json.dumps({'check': 'Qwen JSON validation retry', 'attempt': attempt + 1,
-                'constraint': issue, 'field': field, 'bound': bound,
+                'constraint': issue, 'field': field, 'bound': bound, 'actual_length': actual,
                 'completion_tokens': result.get('usage', {}).get('completion_tokens')}), flush=True)
             if attempt == 2:
-                raise StoryGenerationError('Qwen returned incomplete or invalid lyrics JSON after three attempts') from None
+                raise StoryGenerationError('Qwen returned incomplete or invalid lyrics JSON after three attempts',
+                    code='lyrics_schema_validation',details={'constraint':issue,'field':field,'bound':bound,'actual_length':actual,'attempts':3},retryable=True) from None
             correction = f'The previous response failed {issue} for field {field}.'
             if bound is not None:
-                correction += f' The required {issue} is {bound}.'
+                correction += f' The required {issue} is {bound}; the prior length was {actual}.'
+                if issue=='maxLength':
+                    correction += f' Write this field in no more than {max(1,int(bound*.65))} characters including spaces. Characters are not words.'
             if issue == 'incomplete_output':
                 correction += ' Shorten prose and lyric lines so the entire JSON fits the output budget.'
             messages.append({'role': 'user', 'content': correction +

@@ -21,6 +21,9 @@ def pipeline_failure_message(error):
     if isinstance(error, DuplicateSongError):
         return ('Pipeline failed [duplicate_song]: lyrics or title already published. '
                 'Create a fresh song with a new run ID; do not retry duplicate media.')
+    from lyrics_cpu import StoryGenerationError
+    if isinstance(error,StoryGenerationError):
+        return 'Pipeline failed ['+error.code+']: '+str(error)+' Details: '+json.dumps(error.details,sort_keys=True)
     return ('Pipeline failed: ' + type(error).__name__ +
             '. Inspect checkpoint and configuration.')
 

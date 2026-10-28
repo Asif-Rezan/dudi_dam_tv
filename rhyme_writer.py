@@ -38,7 +38,7 @@ def novelty_reason(lines, history):
 
 def request_json(schema, prompt, seed, budget=2600):
     response=request_story('chat/completions',{'model':MODEL_ID,'seed':seed,'temperature':.85,
-        'max_completion_tokens':budget,
+        'max_completion_tokens':budget,'bounded_metadata_fields':['description','title'],
         'messages':[{'role':'system','content':'You write original, gentle, joyful English nursery rhymes for ages 2-6. Return the requested JSON only. Never reuse a stock verse or a known song.'},
                     {'role':'user','content':prompt}],
         'response_format':{'type':'json_schema','json_schema':{'name':'kids_rhyme','schema':schema}}})
@@ -68,12 +68,13 @@ def write_rhyme(day, identity, seconds, history, draft_path=None):
     for attempt in range(state.get('attempt',0),3):
         if not state.get('outline'):
             state=dict(writer_version=VERSION,run_id=identity,duration=seconds,attempt=attempt,sections=[])
+            save()  # Preserve identity and retry state even if the first response fails.
             state['outline']=request_json(outline_schema,
                 f'Create a NEW {seconds//60}-minute nursery rhyme episode for Dudi Dum TV on {day}. '
                 f'Creative identity {identity}; variation {attempt}. Invent a distinct adventure with a yellow duckling and white bunny. '
                 f'Write {chapters} connected chapter ideas with a beginning, discoveries and a happy ending. '
                 'Teach gentle movement, kindness, colors or nature through concrete playful actions. '
-                'English title must name the actual new adventure, not a run ID. Description must describe this particular story. '
+                'English title must name the actual new adventure, not a run ID. Write a concise 2-3 sentence description, 40-65 words and under 600 characters, describing this particular story. '
                 'Avoid scary situations, danger, commercial brands, adult themes, requests to subscribe and copying existing songs. '
                 'Do not repeat these recent titles or story premises: '+json.dumps(recent),base+attempt*100)
             save()
