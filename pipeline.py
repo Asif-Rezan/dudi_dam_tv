@@ -29,6 +29,10 @@ def pipeline_failure_message(error):
         'Wrong YouTube channel; select Dudi Dam TV',
         'Ambiguous upload; reconcile YouTube before retry to avoid duplicates',
         'Uploaded video unavailable',
+        'Unconfirmed schedule is in the past; reconcile the existing video',
+        'Uploaded channel mismatch', 'YouTube rejected upload', 'Uploaded tags mismatch',
+        'Paid placement disclosure mismatch', 'Scheduled time mismatch',
+        'YouTube did not retain requested visibility',
         'Wrong Drive account',
         'DRIVE_FOLDER_ID is required for this separate channel',
         'DRIVE_FOLDER_ID must identify the dedicated Dudi Dam TV folder',
@@ -42,6 +46,10 @@ def pipeline_failure_message(error):
         'Drive creation conflict; refusing overwrite',
         'Drive download checksum or size verification failed',
     }
+    safe_errors.update('Uploaded metadata mismatch: '+field for field in
+        ('title','description','categoryId','defaultLanguage','defaultAudioLanguage'))
+    safe_errors.update('Uploaded setting mismatch: '+field for field in
+        ('selfDeclaredMadeForKids','containsSyntheticMedia','license','embeddable','publicStatsViewable'))
     if type(error) is RuntimeError and str(error) in safe_errors:
         return 'Pipeline failed [publication_guard]: ' + str(error)
     return ('Pipeline failed: ' + type(error).__name__ +
