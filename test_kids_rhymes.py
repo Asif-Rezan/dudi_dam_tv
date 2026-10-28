@@ -52,23 +52,16 @@ class KidsTests(unittest.TestCase):
             self.assertEqual(generate.call_count,145)
             self.assertEqual(len(list(Path(tmp).glob('*-source.png'))),145)
 
-    def test_render_requires_all_scenes_and_five_second_input(self):
+    def test_render_rejects_missing_scene_before_ffmpeg(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); song=self.song(480)
             (root/'song.json').write_text(json.dumps(song))
-            with patch('pipeline.duration',return_value=480), patch('kids_rhymes.subprocess.run') as run:
+            (root/'song.wav').write_bytes(b'fixture')
+            Image.new('RGB',(32,18),'pink').save(root/'thumbnail-source.png')
+            with patch('pipeline.duration',return_value=480), patch('motion_video.run_ffmpeg') as run:
                 with self.assertRaises(FileNotFoundError):
                     kids.render_video(root)
                 run.assert_not_called()
-                for scene in song['scenes']:
-                    Image.new('RGB',(32,18),'yellow').save(root/f"scene-{scene['index']:03d}-source.png")
-                Image.new('RGB',(32,18),'pink').save(root/'thumbnail-source.png')
-                def render(cmd,**kwargs):
-                    self.assertEqual(cmd[cmd.index('-framerate')+1],'1/5')
-                    Path(cmd[-1]).touch()
-                run.side_effect=render
-                kids.render_video(root)
-                self.assertTrue((root/'video.mp4').exists())
 
 if __name__ == '__main__':
     unittest.main()

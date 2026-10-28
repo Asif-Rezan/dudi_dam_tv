@@ -1,5 +1,6 @@
 """Prepare song assets; optionally verify publication history before generation."""
 import argparse
+from motion_video import render_is_current
 import datetime as dt
 import gc
 import json
@@ -72,7 +73,7 @@ def prepare(run_id, stage='all', check_history=False, vocal_gender='female'):
     if stage == 'music':
         print(json.dumps({'phase':'music ready', 'run_id':run_id}), flush=True)
         return
-    if not (root/'video.mp4').exists():
+    if not render_is_current(root):
         render(root)
     validate_duration(duration(root/'video.mp4'))
     print(json.dumps({'run_id': run_id, 'phase': 'prepared', 'title': song['title'],

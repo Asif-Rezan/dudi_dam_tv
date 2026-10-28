@@ -113,14 +113,5 @@ def render_video(root):
     validate_duration(seconds)
     if abs(seconds-song['duration']) > .25:
         raise ValueError('Audio does not match storyboard duration')
-    for scene in song['scenes']:
-        with Image.open(root/f"scene-{scene['index']:03d}-source.png") as im:
-            ImageOps.fit(im.convert('RGB'), (1920,1080)).save(root/f"frame-{scene['index']:03d}.png")
-    with Image.open(root/'thumbnail-source.png') as im:
-        ImageOps.fit(im.convert('RGB'), (1280,720)).save(root/'thumbnail.jpg', quality=92)
-    temp = root/'video.tmp.mp4'
-    subprocess.run(['ffmpeg','-y','-framerate','1/5','-i',str(root/'frame-%03d.png'),'-i',str(root/'song.wav'),
-        '-r','25','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k',
-        '-t',str(song['duration']),'-movflags','+faststart',str(temp)], check=True, capture_output=True)
-    validate_duration(duration(temp))
-    temp.replace(root/'video.mp4')
+    from motion_video import render_animated
+    render_animated(root, song)

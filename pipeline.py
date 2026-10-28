@@ -1,5 +1,6 @@
 """Kids rhyme -> CPU synthesis -> scene video -> verified YouTube publication."""
 import argparse
+from motion_video import render_is_current
 import datetime as dt
 import hashlib
 import json
@@ -204,7 +205,7 @@ def run(run_id, defer_drive_cleanup=False):
     validate_duration(duration(root/'song.wav'))
     if not state.get('video_id'):
         store.upload(root/'song.wav', f'runs/{run_id}/song.wav')
-        if not (root/'video.mp4').exists():
+        if not render_is_current(root):
             from song_images import generate_song_images
             generate_song_images(root, song)
             render(root)
@@ -213,7 +214,7 @@ def run(run_id, defer_drive_cleanup=False):
         with tarfile.open(root/'storyboard.tar.gz', 'w:gz') as archive:
             for path in sorted(root.glob('scene-*-source.png')) + sorted(root.glob('image-manifest-*.json')):
                 archive.add(path, arcname=path.name)
-        for name in ('storyboard.tar.gz', 'song.json', 'video.mp4', 'thumbnail.jpg', 'background-source.png', 'thumbnail-source.png', 'image-manifest.json'):
+        for name in ('render-state.json', 'storyboard.tar.gz', 'song.json', 'video.mp4', 'thumbnail.jpg', 'background-source.png', 'thumbnail-source.png', 'image-manifest.json'):
             if (root/name).exists():
                 store.upload(root/name, f'runs/{run_id}/{name}')
     elif not (root/'thumbnail.jpg').exists():
