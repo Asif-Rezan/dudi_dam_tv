@@ -100,3 +100,45 @@ class UploadSettingsTests(unittest.TestCase):
         count=client.videos().update.call_count
         schedule_uploaded_video(client,state,save,now+dt.timedelta(hours=3))
         self.assertEqual(client.videos().update.call_count,count)
+
+    def test_missing_ai_field_requires_bound_write_receipt_and_false_never_passes(self):
+        with patch.dict(os.environ,{'UPLOAD_MODE':'public'},clear=True): settings=load_settings()
+        body=upload_body({'title':'Dudi'},'Description',[],settings)
+        video=copy.deepcopy(body)
+        video.update(id='video',processingDetails={'processingStatus':'succeeded'},contentDetails={'definition':'hd'})
+        video['snippet']['channelId']='channel'
+        video['status']['uploadStatus']='processed'
+        del video['status']['containsSyntheticMedia']
+        with self.assertRaises(RuntimeError): verified_phase(video,body,'channel')
+        receipt={'video_id':'video','accepted':True}
+        self.assertEqual(verified_phase(video,body,'channel',receipt),'published')
+        with self.assertRaises(RuntimeError): verified_phase(video,body,'channel',dict(receipt,video_id='other'))
+        video['status']['containsSyntheticMedia']=False
+        with self.assertRaises(RuntimeError): verified_phase(video,body,'channel',receipt)
+
+    def test_disclosure_repair_preserves_live_schedule_and_records_acceptance(self):
+        from upload_settings import ensure_synthetic_disclosure
+        state={'video_id':'video','upload_body':{'status':{'containsSyntheticMedia':True}}}
+        video={'id':'video','status':{'privacyStatus':'private','publishAt':'2030-01-01T12:00:00Z',
+            'selfDeclaredMadeForKids':True,'license':'youtube','embeddable':True,'publicStatsViewable':True}}
+        client,save=Mock(),Mock()
+        client.videos().update().execute.return_value=copy.deepcopy(video)
+        ensure_synthetic_disclosure(client,video,state,save)
+        sent=client.videos().update.call_args.kwargs['body']
+        self.assertEqual(sent['status'],dict(video['status'],containsSyntheticMedia=True))
+        self.assertTrue(state['synthetic_disclosure_receipt']['accepted'])
+        save.assert_called_once()
+        count=client.videos().update.call_count
+        ensure_synthetic_disclosure(client,video,state,save)
+        self.assertEqual(count,client.videos().update.call_count)
+
+    def test_failed_disclosure_update_does_not_record_receipt(self):
+        from upload_settings import ensure_synthetic_disclosure
+        for response in ({'id':'other'}, {'id':'video','status':{'containsSyntheticMedia':False}}):
+            state={'video_id':'video','upload_body':{'status':{'containsSyntheticMedia':True}}}
+            client,save=Mock(),Mock()
+            client.videos().update().execute.return_value=response
+            with self.assertRaises(RuntimeError):
+                ensure_synthetic_disclosure(client,{'id':'video','status':{'privacyStatus':'private'}},state,save)
+            self.assertNotIn('synthetic_disclosure_receipt',state)
+            save.assert_not_called()

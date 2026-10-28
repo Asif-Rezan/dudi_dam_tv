@@ -94,7 +94,40 @@ def schedule_uploaded_video(client, state, save, now=None):
     save()
 
 
-def verified_phase(video, body, channel_id):
+def ensure_synthetic_disclosure(client, video, state, save):
+    """Submit the required disclosure on the existing upload, preserving visibility.
+
+    Some API responses omit this writeable field. Record a successful explicit
+    write for that video; never treat an explicit false value as verified.
+    """
+    if state['upload_body']['status'].get('containsSyntheticMedia') is not True:
+        raise ValueError('AI disclosure is required')
+    status=video.get('status',{})
+    if status.get('containsSyntheticMedia') is True:
+        return
+    receipt=state.get('synthetic_disclosure_receipt',{})
+    if ('containsSyntheticMedia' not in status and receipt.get('video_id')==state['video_id']
+            and receipt.get('accepted') is True):
+        return
+    if video.get('id')!=state['video_id']:
+        raise RuntimeError('Uploaded video unavailable')
+    # Status updates replace mutable properties: preserve the live visibility,
+    # schedule and other settings instead of restoring an old private status.
+    fields=('privacyStatus','publishAt','license','embeddable','publicStatsViewable','selfDeclaredMadeForKids')
+    update={field:status[field] for field in fields if field in status}
+    update['containsSyntheticMedia']=True
+    response=client.videos().update(part='status',body={'id':state['video_id'],'status':update}).execute()
+    returned=response.get('status',{})
+    print(json.dumps({'check':'AI disclosure update','readback_present':'containsSyntheticMedia' in returned,
+                      'readback_value':returned.get('containsSyntheticMedia')}),flush=True)
+    if response.get('id')!=state['video_id'] or returned.get('containsSyntheticMedia') is False:
+        raise RuntimeError('Uploaded setting mismatch: containsSyntheticMedia')
+    state['synthetic_disclosure_receipt']={'video_id':state['video_id'],'accepted':True,
+        'accepted_at':dt.datetime.now(dt.timezone.utc).isoformat()}
+    save()
+
+
+def verified_phase(video, body, channel_id, disclosure_receipt=None):
     """Return a terminal phase only for matching remote metadata and processed HD."""
     snippet, status = video.get('snippet',{}), video.get('status',{})
     if snippet.get('channelId') != channel_id:
@@ -107,6 +140,11 @@ def verified_phase(video, body, channel_id):
     if set(snippet.get('tags',[])) != set(body['snippet']['tags']):
         raise RuntimeError('Uploaded tags mismatch')
     for field in ('selfDeclaredMadeForKids','containsSyntheticMedia','license','embeddable','publicStatsViewable'):
+        if (field=='containsSyntheticMedia' and field not in status
+                and body['status'][field] is True and disclosure_receipt
+                and disclosure_receipt.get('accepted') is True
+                and disclosure_receipt.get('video_id')==video.get('id')):
+            continue
         if status.get(field) != body['status'][field]:
             raise RuntimeError('Uploaded setting mismatch: ' + field)
     if video.get('paidProductPlacementDetails',{}).get('hasPaidProductPlacement',False) != body['paidProductPlacementDetails']['hasPaidProductPlacement']:

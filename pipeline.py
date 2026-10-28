@@ -182,8 +182,15 @@ def publish(client, root, song, state, save):
         if not items:
             raise RuntimeError('Uploaded video unavailable')
         video = items[0]
-        from upload_settings import verified_phase
-        phase = verified_phase(video, state['upload_body'], required('EXPECTED_CHANNEL_ID'))
+        from upload_settings import verified_phase, ensure_synthetic_disclosure
+        if video.get('snippet',{}).get('channelId') != required('EXPECTED_CHANNEL_ID'):
+            raise RuntimeError('Uploaded channel mismatch')
+        if video.get('status',{}).get('containsSyntheticMedia') is not True:
+            ensure_synthetic_disclosure(client, video, state, save)
+            video = client.videos().list(part='snippet,status,processingDetails,contentDetails,paidProductPlacementDetails',
+                id=state['video_id']).execute()['items'][0]
+        phase = verified_phase(video, state['upload_body'], required('EXPECTED_CHANNEL_ID'),
+                               state.get('synthetic_disclosure_receipt'))
         if phase:
             state['phase'] = phase
             save()
