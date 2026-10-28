@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 from PIL import Image, ImageDraw
 
-VERSION = 'storybook-motion-v1'
+VERSION = 'storybook-motion-v2-visible-bubbles'
 FPS = 25
 SCENE_SECONDS = 5
 TRANSITION = .28
@@ -42,9 +42,12 @@ def bubble_sprite(target):
     """A small original decorative overlay; transparent center keeps faces visible."""
     im=Image.new('RGBA',(160,160))
     draw=ImageDraw.Draw(im)
-    draw.ellipse((20,20,140,140),fill=(255,238,255,12),outline=(255,255,255,135),width=4)
-    draw.arc((27,27,133,133),195,265,fill=(255,220,245,170),width=5)
-    draw.ellipse((42,40,54,52),fill=(255,255,255,155))
+    draw.ellipse((14,14,146,146),fill=(166,225,255,48),outline=(99,154,231,230),width=6)
+    draw.ellipse((20,20,140,140),outline=(244,253,255,240),width=3)
+    draw.arc((19,19,141,141),25,145,fill=(248,151,218,245),width=6)
+    draw.arc((27,27,133,133),190,270,fill=(255,255,255,255),width=7)
+    draw.ellipse((39,37,54,52),fill=(255,255,255,245))
+    draw.ellipse((104,107,113,116),fill=(255,244,255,220))
     im.save(target)
 
 
@@ -65,13 +68,13 @@ def scene_filter(index, width, height, previous=False):
             f'[2:v]scale={width}:{height},setsar=1,format=rgba[previous]',
             '[previous][incoming]overlay=shortest=1[transition]']
         base='transition'
-    filters += ['[1:v]split=3[b1][b2][b3]']
+    filters += ['[1:v]split=4[b1][b2][b3][b4]']
     # Keep decoration near the frame edges, with separate drift for parallax.
-    for j,(size,xpos,speed) in enumerate(((.075,.07,15),(.055,.88,22),(.04,.79,11)),1):
+    for j,(size,xpos,speed) in enumerate(((.14,.025,10),(.115,.85,12),(.085,.16,9),(.075,.77,11)),1):
         px=max(12,round(width*size)//2*2)
         filters.append(f'[b{j}]scale={px}:{px},format=rgba[s{j}]')
         bx=f'W*{xpos}+W*0.018*sin(2*PI*t/4+{phase+j})'
-        by=f'H*(1.12-mod(t/{speed}+{j*.27},1.3))'
+        by=f'H*(1.12-mod(t/{speed}+{j*.23},1.3))'
         filters.append(f"[{base}][s{j}]overlay=x='{bx}':y='{by}':shortest=1[layer{j}]")
         base=f'layer{j}'
     filters.append(f'[{base}]format=yuv420p[out]')
