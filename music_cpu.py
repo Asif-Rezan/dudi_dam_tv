@@ -89,7 +89,9 @@ def runtime(source):
 
 def synthesize(song, target, source, model_root):
     from pipeline import validate_song, validate_duration, duration
-    validate_song(song)
+    # Segment requests are derived from a validated full-song manifest.
+    if not song.get('_segment'):
+        validate_song(song)
     checkpoints(model_root)
     os.environ['ACESTEP_CHECKPOINTS_DIR'] = str(model_root.resolve())
     os.environ['ACESTEP_INIT_LLM'] = 'false'
@@ -107,7 +109,7 @@ def synthesize(song, target, source, model_root):
     if not ready or handler.device != 'cpu':
         raise RuntimeError('ACE-Step CPU initialization failed')
     params = Params(caption=song['prompt'], lyrics=song['lyrics'],
-        duration=song['duration'], vocal_language='hi', instrumental=False,
+        duration=song['duration'], reference_audio=reference_audio(), vocal_language='en', instrumental=False,
         inference_steps=8, thinking=False, use_cot_metas=False,
         use_cot_caption=False, use_cot_language=False)
     config = Config(batch_size=1, audio_format='wav', allow_lm_batch=False)
@@ -118,19 +120,33 @@ def synthesize(song, target, source, model_root):
     if not result.success or not result.audios:
         raise RuntimeError('ACE-Step CPU music synthesis failed')
     audio = Path(result.audios[0]['path'])
-    validate_duration(duration(audio))
+    if abs(duration(audio) - song['duration']) > 2:
+        raise RuntimeError('Generated segment duration differs from requested duration')
     temporary = target.with_suffix('.part.wav')
     shutil.copyfile(audio, temporary)
     temporary.replace(target)
     print(json.dumps({'phase':'music ready', 'duration':duration(target), 'device':'cpu'}), flush=True)
 
 
+def reference_audio():
+    value = os.getenv('REFERENCE_AUDIO_PATH')
+    if value and not Path(value).is_file():
+        raise ValueError('REFERENCE_AUDIO_PATH does not exist')
+    return str(Path(value).resolve()) if value else None
+
+
 def generate(song, target, state, save):
+    from kids_rhymes import generate_music
+    return generate_music(song, target, state, save)
+
+
+def generate_segment(song, target, state, save):
     # Local CPU generation has no remote task to duplicate. A failed or killed
     # runner can regenerate the same saved lyrics without resubmitting to a service.
     from pipeline import validate_duration, duration
     if target.exists():
-        validate_duration(duration(target))
+        if abs(duration(target) - song['duration']) > 2:
+            raise ValueError('Invalid saved segment duration')
         return
     source = Path(os.environ.get('ACESTEP_SOURCE_DIR', '.vendor/ace-step')).resolve()
     model_root = Path(os.environ.get('ACESTEP_CHECKPOINTS_DIR', '.models/acestep')).resolve()
@@ -146,7 +162,8 @@ def generate(song, target, state, save):
         state.update(generation_started=False, generation_failed='Local CPU worker failed; saved lyrics retained')
         save()
         raise RuntimeError('Local ACE-Step CPU worker failed; resume the saved run') from None
-    validate_duration(duration(target))
+    if abs(duration(target) - song['duration']) > 2:
+        raise ValueError('Invalid generated segment duration')
     state.pop('generation_failed', None)
     state.update(audio_ready=True, generation_started=False)
     save()

@@ -6,7 +6,7 @@ import re
 
 from storage import Store, drive_retry, required
 
-MEDIA = ('song.wav', 'video.mp4', 'thumbnail.jpg', 'background-source.png',
+MEDIA = ('storyboard.tar.gz', 'song.wav', 'video.mp4', 'thumbnail.jpg', 'background-source.png',
          'thumbnail-source.png', 'cover.png')
 
 

@@ -43,8 +43,8 @@ class Store:
             raise RuntimeError('DRIVE_FOLDER_ID is required for this separate channel')
         info = drive_retry(lambda: self.client.files().get(fileId=self.folder, fields='mimeType,trashed,appProperties').execute())
         if (info.get('trashed') or info['mimeType'] != 'application/vnd.google-apps.folder'
-                or info.get('appProperties', {}).get('heart_and_mind_root') != 'v1'):
-            raise RuntimeError('DRIVE_FOLDER_ID must identify the dedicated Heart and Mind folder')
+                or info.get('appProperties', {}).get('dudi_dam_tv_root') != 'v1'):
+            raise RuntimeError('DRIVE_FOLDER_ID must identify the dedicated Dudi Dam TV folder')
         self.check_private(self.folder)
 
     def check_private(self, file_id):

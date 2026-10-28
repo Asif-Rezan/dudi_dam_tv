@@ -28,7 +28,7 @@ def safer_prompt(prompt):
     for pattern, replacement in replacements:
         prompt = re.sub(pattern, replacement, prompt, flags=re.I)
     # Preserve the scene's visual anchor before the encoders' token limit.
-    return prompt + ' Respectful fully clothed adults, no violence.'
+    return prompt + ' Friendly storybook animals, no violence.'
 
 def recovery_prompt(prompt):
     """Keep the musical mood with a restrained fully clothed composition."""
@@ -46,7 +46,7 @@ def negative_prompt():
             'poster, magazine, red brushwork, elderly, old man, gray hair, deep wrinkles, '
             'orange skin, underexposed faces, silhouette, crowd, extra people, fused faces, '
             'duplicated face, cropped head, extreme close-up, deformed hands, extra limbs, '
-            'plastic skin, blur, low quality, cartoon, anime, CGI, collage, split screen, '
+            'plastic skin, blur, low quality, photorealistic, horror, frightening, collage, split screen, '
             'black panel, border, ' + os.getenv('IMAGE_NEGATIVE_PROMPT', ''))
 
 
@@ -55,7 +55,7 @@ _pipeline = None
 
 def generate(prompt, path, seed, allow_text=False):
     if allow_text:
-        raise ValueError('Heart and Mind artwork must be text-free')
+        raise ValueError('Dudi Dam TV artwork must be text-free')
     global _pipeline
     import torch
     from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler

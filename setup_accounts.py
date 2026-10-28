@@ -6,7 +6,7 @@ import shutil
 import os
 from pathlib import Path
 
-REPO = 'Asif-Rezan/Heart-and-Mind'
+REPO = 'Asif-Rezan/dudi_dam_tv'
 SCOPES = {
     'youtube': ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly'],
     'drive': ['https://www.googleapis.com/auth/drive.file'],
@@ -32,7 +32,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('account', choices=SCOPES)
     parser.add_argument('--client', default='client_secrets.json')
-    parser.add_argument('--channel-id', help='Required for YouTube; copy Heart and Mind channel ID from Studio')
+    parser.add_argument('--channel-id', help='Required for YouTube; copy Dudi Dam TV channel ID from Studio')
     args = parser.parse_args()
     if args.account == 'youtube' and not args.channel_id:
         parser.error('--channel-id is required to prevent selecting another channel')
@@ -61,13 +61,13 @@ def main():
         api = build('drive', 'v3', credentials=credentials, cache_discovery=False)
         if api.about().get(fields='user(emailAddress)').execute()['user']['emailAddress'].lower() != email:
             raise RuntimeError('Wrong Drive account; no folder created')
-        folders = api.files().list(q="trashed=false and mimeType='application/vnd.google-apps.folder' and appProperties has { key='heart_and_mind_root' and value='v1' }", fields='files(id)').execute()['files']
+        folders = api.files().list(q="trashed=false and mimeType='application/vnd.google-apps.folder' and appProperties has { key='dudi_dam_tv_root' and value='v1' }", fields='files(id)').execute()['files']
         if len(folders) > 1:
             raise RuntimeError('Multiple project folders; reconcile manually')
         folder = folders[0] if folders else api.files().create(body={
-            'name': 'Heart and Mind - Hindi Music Automation',
+            'name': 'Dudi Dam TV - Kids Rhyme Automation',
             'mimeType': 'application/vnd.google-apps.folder',
-            'appProperties': {'heart_and_mind_root': 'v1'}}, fields='id').execute()
+            'appProperties': {'dudi_dam_tv_root': 'v1'}}, fields='id').execute()
         secret('DRIVE_TOKEN_JSON', credentials.to_json())
         secret('DRIVE_FOLDER_ID', folder['id'])
         print('Dedicated Drive folder configured for ' + email)

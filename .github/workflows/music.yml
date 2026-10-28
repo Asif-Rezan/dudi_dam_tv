@@ -1,4 +1,4 @@
-name: Hindi album music generation and public publishing
+name: Dudi Dam TV kids rhyme generation
 on:
   workflow_dispatch:
     inputs:
@@ -7,13 +7,11 @@ on:
         required: true
         type: string
       vocal_gender:
-        description: Voice for a NEW song only; auto follows the daily male/female rotation
+        description: Sweet female nursery rhyme voice
         required: false
-        default: auto
+        default: female
         type: choice
         options:
-          - auto
-          - male
           - female
       prepared_run:
         description: Optional previous GitHub run ID containing saved lyrics or music
@@ -21,11 +19,14 @@ on:
         type: string
   schedule:
     - cron: '0 21 * * *' # 03:00 Asia/Dhaka (next local day)
+env:
+  VIDEO_DURATION_SECONDS: '600'
+  REFERENCE_AUDIO_PATH: assets/reference/style-reference.mp3
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: heart-and-mind-publish
+  group: dudi-dam-tv-publish
   cancel-in-progress: false
 jobs:
   lyrics:
@@ -41,7 +42,7 @@ jobs:
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
       REQUESTED_RUN_ID: ${{ inputs.run_id }}
-      REQUESTED_VOCAL_GENDER: ${{ inputs.vocal_gender || 'auto' }}
+      REQUESTED_VOCAL_GENDER: ${{ inputs.vocal_gender || 'female' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,7 +57,7 @@ jobs:
           RUN_ID="${REQUESTED_RUN_ID:-daily-$(TZ=Asia/Dhaka date +%F)}"
           [[ "$RUN_ID" =~ ^[a-zA-Z0-9_-]{1,80}$ ]] || exit 1
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-      - run: pip install -r requirements.txt -r requirements-lyrics.txt
+      - run: pip install -r requirements.txt
       - run: python -m unittest -v
       - name: Find available recovery checkpoints
         id: recovery
@@ -92,12 +93,12 @@ jobs:
           run-id: ${{ inputs.prepared_run }}
           github-token: ${{ github.token }}
           path: output/
-      - name: Generate original Hindi lyrics and verify uniqueness
+      - name: Prepare kids rhyme and five-second storyboard
         env:
           SONG_RUN_ID: ${{ steps.identity.outputs.run_id }}
           DRIVE_TOKEN_JSON: ${{ secrets.DRIVE_TOKEN_JSON }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
-        run: python -u prepare_music.py --run-id "$SONG_RUN_ID" --stage lyrics --check-history --vocal-gender "$REQUESTED_VOCAL_GENDER"
+        run: python -u prepare_music.py --run-id "$SONG_RUN_ID" --stage lyrics --vocal-gender "$REQUESTED_VOCAL_GENDER"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -162,7 +163,7 @@ jobs:
         with:
           name: music-input-${{ github.run_id }}
           path: output/
-      - name: Generate full Hindi song with ACE-Step on GitHub CPU
+      - name: Generate female kids rhyme parts with ACE-Step on GitHub CPU
         run: python -u prepare_music.py --run-id "$SONG_RUN_ID" --stage music
       - uses: actions/upload-artifact@v4
         if: always()
@@ -171,13 +172,20 @@ jobs:
           path: |
             output/*/song.json
             output/*/song.wav
+            output/*/part-*.wav
             output/*/generation-state.json
           retention-days: 7
   images:
     needs: lyrics
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     env:
+      IMAGE_SHARD: ${{ matrix.shard }}
+      IMAGE_SHARDS: '12'
       SONG_RUN_ID: ${{ needs.lyrics.outputs.run_id }}
       CUDA_VISIBLE_DEVICES: ''
       OMP_NUM_THREADS: '4'
@@ -209,24 +217,16 @@ jobs:
         with:
           name: music-input-${{ github.run_id }}
           path: output/
-      - name: Restore previous song artwork when available
-        if: inputs.prepared_run != '' && contains(fromJSON(needs.lyrics.outputs.restore_artifacts || '[]'), format('generated-artwork-{0}', inputs.prepared_run))
-        uses: actions/download-artifact@v4
-        with:
-          name: generated-artwork-${{ inputs.prepared_run }}
-          run-id: ${{ inputs.prepared_run }}
-          github-token: ${{ github.token }}
-          path: output/
-      - name: Generate unique song background and thumbnail scenes
+      - name: Generate lyric-matched five-second scenes
         run: python -u prepare_music.py --run-id "$SONG_RUN_ID" --stage images
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: generated-artwork-${{ github.run_id }}
+          name: generated-artwork-${{ github.run_id }}-${{ matrix.shard }}
           path: |
-            output/*/background-source.png
+            output/*/scene-*-source.png
             output/*/thumbnail-source.png
-            output/*/image-manifest.json
+            output/*/image-manifest-*.json
           retention-days: 7
   publish:
     needs: [lyrics, music, images]
@@ -256,11 +256,21 @@ jobs:
           path: output/
       - uses: actions/download-artifact@v4
         with:
-          name: generated-artwork-${{ github.run_id }}
+          pattern: generated-artwork-${{ github.run_id }}-*
+          merge-multiple: true
           path: output/
       - name: Render video on GitHub CPU
         run: python -u prepare_music.py --run-id "$SONG_RUN_ID" --stage render
-      - name: Back up to Drive and publish publicly on Heart and Mind
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kids-video-${{ github.run_id }}
+          path: |
+            output/*/video.mp4
+            output/*/thumbnail.jpg
+            output/*/song.json
+          retention-days: 7
+      - name: Back up to Drive and publish publicly on Dudi Dam TV
+        if: vars.PUBLISH_ENABLED == 'true'
         run: python -u pipeline.py --run-id "$SONG_RUN_ID" --defer-drive-cleanup
       - uses: actions/upload-artifact@v4
         if: always()
@@ -271,6 +281,7 @@ jobs:
   cleanup:
     name: Clean published media from Drive
     needs: [lyrics, publish]
+    if: vars.PUBLISH_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:

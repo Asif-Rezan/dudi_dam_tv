@@ -11,7 +11,7 @@ from music_cpu import generate
 import os
 
 
-def prepare(run_id, stage='all', check_history=False, vocal_gender='auto'):
+def prepare(run_id, stage='all', check_history=False, vocal_gender='female'):
     if vocal_gender not in ('auto', 'male', 'female'):
         raise ValueError('Vocal choice must be auto, male or female')
     if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', run_id):
@@ -84,7 +84,7 @@ if __name__ == '__main__':
     parser.add_argument('--stage', choices=['all', 'lyrics', 'music', 'images', 'render'], default='all')
     parser.add_argument('--check-history', action='store_true',
                         help='Verify title and lyrics against Drive publication history before costly stages')
-    parser.add_argument('--vocal-gender', choices=['auto', 'male', 'female'], default='auto')
+    parser.add_argument('--vocal-gender', choices=['auto', 'male', 'female'], default='female')
     args = parser.parse_args()
     try:
         prepare(args.run_id, args.stage, check_history=args.check_history, vocal_gender=args.vocal_gender)
