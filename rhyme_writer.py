@@ -87,9 +87,19 @@ def write_rhyme(day, identity, seconds, history, draft_path=None):
                     'type':'object','additionalProperties':False,'required':['lyric','visual'],
                     'properties':{'lyric':{'type':'string','minLength':10,'maxLength':100},
                                   'visual':{'type':'string','minLength':15,'maxLength':180}}}}}}
-            for retry in range(3):
+            # Keep useful model output; only ask again for rejected/missing lines.
+            pending=state.get('pending',{})
+            rows=list(pending.get('rows',[])) if pending.get('chapter')==chapter else []
+            feedback=pending.get('feedback',[]) if rows else []
+            repair_round=pending.get('repair_round',0) if pending.get('chapter')==chapter else 0
+            for retry in range(6):
+                remaining=count-len(rows)
+                if not remaining:
+                    break
+                schema['properties']['verses']['minItems']=remaining
+                schema['properties']['verses']['maxItems']=remaining
                 block=request_json(schema,
-                    f'Write {count} NEW short English sung lines for chapter {chapter+1}/{chapters} of this original episode: '
+                    f'Write exactly {remaining} NEW short English sung lines for chapter {chapter+1}/{chapters} of this original episode: '
                     +json.dumps(outline)+'. Current chapter: '+outline['chapters'][chapter]+'. '
                     'Each line occupies five seconds: use 4-9 simple singable words with playful rhyme and concrete actions. '
                     f'Between every two original lines the singer will sing "{REFRAIN}" for five seconds. '
@@ -97,15 +107,37 @@ def write_rhyme(day, identity, seconds, history, draft_path=None):
                     'Every verse line must be different. Develop this chapter rather than repeating earlier verses. '
                     'For each line, visual describes the same action and setting, featuring the same duckling and bunny. '
                     'It is a text-free cartoon picture prompt, with no camera instructions or lettering. '
-                    'Previous lines to avoid repeating: '+json.dumps(prior[-24:])+f'. Rewrite attempt {retry}.',
-                    base+attempt*100+chapter*3+retry+1)
-                rows=block['verses']
-                valid=len(rows)==count and all(4<=len(normalized(row['lyric']).split())<=12 and normalized(row['lyric'])!=REFRAIN for row in rows)
-                proposed=[normalized(v) for v in prior]+[normalized(row['lyric']) for row in rows]
-                if valid and len(set(proposed))==len(proposed):
+                    'Previous lines to avoid repeating: '+json.dumps(prior+[row['lyric'] for row in rows])+
+                    '. Fix these rejected-line constraints: '+json.dumps(feedback)+f'. Rewrite attempt {retry}.',
+                    (base+attempt*10000+chapter*1000+repair_round+retry+1) % (2**31-1))
+                seen={normalized(line) for line in prior+[row['lyric'] for row in rows]}
+                feedback=[]
+                for index,row in enumerate(block['verses']):
+                    line=normalized(row['lyric'])
+                    words=len(line.split())
+                    reason=('word_count' if not 4<=words<=12 else
+                            'reserved_refrain' if line==REFRAIN else
+                            'duplicate_line' if line in seen else None)
+                    if reason:
+                        feedback.append({'line':index+1,'reason':reason,'word_count':words,
+                                         'minimum_words':4,'maximum_words':12})
+                    elif len(rows)<count:
+                        rows.append(row)
+                        seen.add(line)
+                state['pending']={'chapter':chapter,'rows':rows,'feedback':feedback,
+                                  'repair_round':repair_round+retry+1}
+                save()
+                if len(rows)==count:
                     break
+                print(json.dumps({'phase':'repair verse lines','chapter':chapter+1,
+                    'attempt':retry+1,'accepted_lines':len(rows),'required_lines':count,
+                    'rejections':feedback}),flush=True)
             else:
-                raise StoryGenerationError('Qwen could not write distinct singable verse lines')
+                raise StoryGenerationError('Qwen verse repair exhausted; resume this run to keep accepted lines',
+                    code='lyrics_verse_validation',retryable=True,
+                    details={'chapter':chapter+1,'accepted_lines':len(rows),'required_lines':count,
+                             'attempts':6,'rejections':feedback})
+            state.pop('pending',None)
             state['sections'].append(rows)
             prior.extend(row['lyric'] for row in rows)
             save()

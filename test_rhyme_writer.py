@@ -63,6 +63,46 @@ class WriterTests(unittest.TestCase):
         with patch('rhyme_writer.request_json',side_effect=repeated), self.assertRaises(StoryGenerationError):
             write_rhyme('2026-10-28','repeat',480,[])
 
+    def test_repairs_only_rejected_lines_with_feedback(self):
+        calls=[]
+        def model(schema,prompt,seed,budget=2600):
+            result=fake_model(schema,prompt,seed)
+            if 'verses' in result:
+                calls.append((schema['properties']['verses']['minItems'],prompt))
+                if len(calls)==1:
+                    result['verses'][0]['lyric']='Too short'
+                    result['verses'][1]['lyric']=result['verses'][2]['lyric']
+            return result
+        with patch('rhyme_writer.request_json',side_effect=model):
+            result=write_rhyme('2026-10-28','repair',120,[])
+        self.assertEqual([call[0] for call in calls],[12,2])
+        self.assertIn('word_count',calls[1][1])
+        self.assertIn('duplicate_line',calls[1][1])
+        self.assertEqual(len(result['sections'][0]),12)
+        self.assertNotIn('pending',result)
+
+    def test_exhausted_repairs_save_partial_progress_and_resume(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'draft.json'
+            def model(schema,prompt,seed,budget=2600):
+                result=fake_model(schema,prompt,seed)
+                if 'verses' in result:
+                    for row in result['verses']:
+                        row['lyric']='Happy little bunny waves hello'
+                return result
+            with patch('rhyme_writer.request_json',side_effect=model), self.assertRaises(StoryGenerationError) as caught:
+                write_rhyme('2026-10-28','partial',120,[],path)
+            self.assertEqual(caught.exception.code,'lyrics_verse_validation')
+            self.assertTrue(caught.exception.retryable)
+            self.assertEqual(caught.exception.details['accepted_lines'],1)
+            saved=json.loads(path.read_text())
+            self.assertEqual(len(saved['pending']['rows']),1)
+            with patch('rhyme_writer.request_json',side_effect=fake_model) as model_call:
+                result=write_rhyme('2026-10-28','partial',120,[],path)
+            self.assertEqual(model_call.call_count,1)
+            self.assertEqual(result['sections'][0][0],saved['pending']['rows'][0])
+            self.assertEqual(len(result['sections'][0]),12)
+
     def test_novelty_compares_verses_not_shared_refrain(self):
         lines=['tiny ducklings carry baskets full of daisies','bunny paints a rainbow across the sky']
         self.assertIsNone(novelty_reason(lines,[]))
