@@ -1,0 +1,11 @@
+output/
+__pycache__/
+.env
+*token*.json
+client_secrets*.json
+.venv/
+
+.credentials/
+
+.vendor/
+.models/

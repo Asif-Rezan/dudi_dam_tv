@@ -1,0 +1,95 @@
+name: Demo thumbnail and background preview
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Optional completed demo run to recompose without regenerating images
+        required: false
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  scenes:
+    if: inputs.source_run == ''
+    name: Generate demo ${{ matrix.kind }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [background, thumbnail]
+    env:
+      CUDA_VISIBLE_DEVICES: ''
+      OMP_NUM_THREADS: '4'
+      HF_HUB_DISABLE_XET: '1'
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
+      CPU_IMAGE_WIDTH: '1024'
+      CPU_IMAGE_HEIGHT: '576'
+      CPU_IMAGE_STEPS: '20'
+      IMAGE_KIND: ${{ matrix.kind }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Prepare CPU image memory
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo fallocate -l 12G /swapfile-images
+          sudo chmod 600 /swapfile-images
+          sudo mkswap /swapfile-images
+          sudo swapon /swapfile-images
+      - name: Install production image runtime
+        run: |
+          pip install --no-cache-dir torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir -r requirements.txt -r requirements-images-cpu.txt
+      - name: Generate review scene
+        run: python -u demo_artwork.py --kind "$IMAGE_KIND"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-scene-${{ matrix.kind }}
+          path: output/artwork-demo/*
+          if-no-files-found: error
+          retention-days: 7
+  preview:
+    name: Compose downloadable artwork previews
+    needs: scenes
+    if: always() && (needs.scenes.result == 'success' || (needs.scenes.result == 'skipped' && inputs.source_run != ''))
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        if: inputs.source_run == ''
+        with:
+          pattern: demo-scene-*
+          merge-multiple: true
+          path: output/artwork-demo/
+      - name: Validate source demo identity
+        if: inputs.source_run != ''
+        env:
+          SOURCE_RUN: ${{ inputs.source_run }}
+        run: '[[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]'
+      - uses: actions/download-artifact@v4
+        if: inputs.source_run != ''
+        with:
+          name: demo-artwork-preview
+          run-id: ${{ inputs.source_run }}
+          github-token: ${{ github.token }}
+          path: output/artwork-demo/
+      - run: python demo_artwork.py --kind compose
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-artwork-preview
+          path: output/artwork-demo/*
+          if-no-files-found: error
+          retention-days: 7
