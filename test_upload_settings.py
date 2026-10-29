@@ -201,3 +201,39 @@ class UploadSettingsTests(unittest.TestCase):
         schedule_uploaded_video(client,state,Mock(),dt.datetime(2026,10,29,12,tzinfo=dt.timezone.utc))
         self.assertTrue(state['schedule_configured'])
         client.videos.return_value.update.assert_not_called()
+
+    def test_schedule_quota_denial_is_not_blindly_retried(self):
+        from googleapiclient.errors import HttpError
+        import httplib2
+        settings=load_settings()
+        state={'video_id':'video','upload_settings':settings,
+            'upload_completed_at':'2026-10-29T12:00:00Z',
+            'upload_body':upload_body({'title':'Dudi'},'description',[],settings)}
+        client=Mock()
+        client.videos.return_value.list.return_value.execute.return_value={'items':[
+            {'id':'video','status':{'privacyStatus':'private','uploadStatus':'processed'}}]}
+        client.videos.return_value.update.return_value.execute.side_effect=HttpError(
+            httplib2.Response({'status':'403'}),b'{"error":{"errors":[{"reason":"quotaExceeded"}]}}')
+        with patch('upload_settings.time.sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError,'permission or quota denied'):
+                schedule_uploaded_video(client,state,Mock(),dt.datetime(2026,10,29,12,tzinfo=dt.timezone.utc))
+        sleep.assert_not_called()
+        self.assertFalse(state.get('schedule_configured',False))
+        self.assertEqual(state['video_id'],'video')
+        client.videos.return_value.insert.assert_not_called()
+
+    def test_processing_wait_is_bounded_and_preserves_pending_checkpoint(self):
+        settings=load_settings()
+        state={'video_id':'video','upload_settings':settings,
+            'upload_completed_at':'2026-10-29T12:00:00Z',
+            'upload_body':upload_body({'title':'Dudi'},'description',[],settings)}
+        client=Mock()
+        client.videos.return_value.list.return_value.execute.return_value={'items':[
+            {'id':'video','status':{'privacyStatus':'private','uploadStatus':'uploaded'},
+             'processingDetails':{'processingStatus':'processing'}}]}
+        with patch('upload_settings.time.sleep'):
+            with self.assertRaises(TimeoutError):
+                schedule_uploaded_video(client,state,Mock(),dt.datetime(2026,10,29,12,tzinfo=dt.timezone.utc))
+        self.assertEqual(client.videos.return_value.list.call_count,12)
+        self.assertTrue(state['schedule_pending'])
+        client.videos.return_value.update.assert_not_called()
