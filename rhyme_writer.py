@@ -37,12 +37,24 @@ def novelty_reason(lines, history):
 
 
 def request_json(schema, prompt, seed, budget=2600):
-    response=request_story('chat/completions',{'model':MODEL_ID,'seed':seed,'temperature':.85,
-        'max_completion_tokens':budget,'bounded_metadata_fields':['description','title'],
+    payload={'model':MODEL_ID,'temperature':.85,
+        'max_completion_tokens':budget,
+        'bounded_metadata_fields':['description','title','characters','visual_world'],
         'messages':[{'role':'system','content':'You write original, gentle, joyful English nursery rhymes for ages 2-6. Return the requested JSON only. Never reuse a stock verse or a known song.'},
                     {'role':'user','content':prompt}],
-        'response_format':{'type':'json_schema','json_schema':{'name':'kids_rhyme','schema':schema}}})
-    return json.loads(response['choices'][0]['message']['content'])
+        'response_format':{'type':'json_schema','json_schema':{'name':'kids_rhyme','schema':schema}}}
+    for attempt in range(3):
+        payload['seed']=(seed + attempt * 7919) % (2**31 - 2)
+        try:
+            response=request_story('chat/completions',payload)
+            return json.loads(response['choices'][0]['message']['content'])
+        except StoryGenerationError as error:
+            if not error.retryable or attempt == 2:
+                raise
+            # No raw generated content or credentials in diagnostics. Completed
+            # chapters and accepted verse repairs remain in the saved draft.
+            print(json.dumps({'phase':'retry rhyme model request',
+                'attempt':attempt+1,'error_code':error.code}),flush=True)
 
 
 def write_rhyme(day, identity, seconds, history, draft_path=None):
@@ -60,8 +72,8 @@ def write_rhyme(day, identity, seconds, history, draft_path=None):
     chapters=(seconds+119)//120
     recent=[{'title':h.get('title',''),'story':h.get('story_summary',''),'visual_identity':h.get('visual_identity',{})} for h in history[-12:]]
     outline_schema={'type':'object','additionalProperties':False,'required':['title','story_summary','description','chapters','characters','visual_world'],
-        'properties':{'characters':{'type':'string','minLength':20,'maxLength':180},
-        'visual_world':{'type':'string','minLength':20,'maxLength':160},
+        'properties':{'characters':{'type':'string','minLength':20,'maxLength':320},
+        'visual_world':{'type':'string','minLength':20,'maxLength':240},
         'title':{'type':'string','minLength':8,'maxLength':65},
         'story_summary':{'type':'string','minLength':40,'maxLength':400},
         'description':{'type':'string','minLength':80,'maxLength':650},
@@ -75,6 +87,7 @@ def write_rhyme(day, identity, seconds, history, draft_path=None):
                 f'Create a NEW {seconds//60}-minute nursery rhyme episode for Dudi Dum TV on {day}. '
                 f'Creative identity {identity}; variation {attempt}. Invent a distinct adventure and choose a NEW cast suited to its story: cute baby animals, friendly little vehicles, or gentle fantasy creatures. Do not default to a duckling and bunny. '
                 f'Write {chapters} connected chapter ideas with a beginning, discoveries and a happy ending. '
+                'Keep characters under 320 characters and visual_world under 240 characters, including spaces. '
                 'characters must describe 1-3 protagonists with species/type, colors and distinctive features, kept consistent throughout this episode. '
                 'visual_world must describe the story-specific setting, props and pastel palette. Vary the cast and world from recent episodes. '
                 'Teach gentle movement, kindness, colors or nature through concrete playful actions. '

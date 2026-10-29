@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from rhyme_writer import write_rhyme, novelty_reason, normalized, VERSION
+from rhyme_writer import write_rhyme, novelty_reason, normalized, VERSION, request_json
 from lyrics_cpu import StoryGenerationError
 
 WORDS=['amber','blue','coral','daisy','emerald','fern','golden','hazel','indigo','jolly','kiwi','lemon']
@@ -115,6 +115,28 @@ class WriterTests(unittest.TestCase):
         self.assertEqual(novelty_reason(lines,[{'verse_lines':lines}]),'duplicate_verses')
         self.assertEqual(novelty_reason([lines[0],lines[0]],[]),'repeated_verse_in_episode')
         self.assertIsNone(novelty_reason(lines,[{'verse_lines':['gentle sea turtles build castles with sand']}]))
+
+    def test_retryable_model_request_recovers_with_fresh_seed(self):
+        error=StoryGenerationError('Invalid JSON',code='lyrics_schema_validation',retryable=True)
+        seeds=[]
+        def response(endpoint,payload):
+            seeds.append(payload['seed'])
+            if len(seeds)<3:
+                raise error
+            self.assertIn('characters',payload['bounded_metadata_fields'])
+            self.assertIn('visual_world',payload['bounded_metadata_fields'])
+            return {'choices':[{'message':{'content':'{"ready":true}'}}]}
+        with patch('rhyme_writer.request_story',side_effect=response):
+            self.assertEqual(request_json({},'Write a rhyme',123),{'ready':True})
+        self.assertEqual(seeds,[123,8042,15961])
+
+    def test_model_request_retries_are_bounded_and_fatal_errors_not_retried(self):
+        for retryable,count in ((True,3),(False,1)):
+            error=StoryGenerationError('Model failure',retryable=retryable)
+            with patch('rhyme_writer.request_story',side_effect=error) as model:
+                with self.assertRaises(StoryGenerationError):
+                    request_json({},'Write a rhyme',123)
+            self.assertEqual(model.call_count,count)
 
     def test_recent_identical_cast_is_rejected(self):
         history = [{'visual_identity': {'characters':

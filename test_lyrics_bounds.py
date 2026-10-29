@@ -35,6 +35,24 @@ class BoundsTests(unittest.TestCase):
         self.assertEqual(result['title'],'The bright bunny and duck')
         self.assertEqual(result['description'],'Happy friends.')
 
+    def test_overlong_visual_identity_recovers_without_model_retry(self):
+        # Reproduce the production failure (285 characters versus a 180 limit),
+        # and cover both new outline fields and extreme overlong prose.
+        for field in ('characters', 'visual_world'):
+            for length in (206, 210, 285, 1500):
+                with self.subTest(field=field, length=length):
+                    text=('A lavender elephant and teal turtle explore a pastel garden. ' * 30)[:length]
+                    result,model=self.request({field:text,'lyric':'Tiny friends jump beside flowers',
+                        'visual':'Elephant and turtle hop beside pink flowers.'},
+                        {field:{'type':'string','minLength':20,'maxLength':180},
+                         'lyric':{'type':'string'},'visual':{'type':'string'}},
+                        [field,'lyric','visual'])
+                    self.assertTrue(20 <= len(result[field]) <= 180)
+                    self.assertTrue(result[field].endswith('.'))
+                    self.assertEqual(result['lyric'],'Tiny friends jump beside flowers')
+                    self.assertEqual(result['visual'],'Elephant and turtle hop beside pink flowers.')
+                    model.create_chat_completion.assert_called_once()
+
     def test_sung_lyrics_are_never_truncated(self):
         with self.assertRaises(cpu.StoryGenerationError) as caught:
             self.request({'lyric':'private words '*30},{'lyric':{'type':'string','maxLength':100}},['lyric'])

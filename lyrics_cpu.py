@@ -28,14 +28,16 @@ class StoryGenerationError(RuntimeError):
 
 
 def bounded_metadata(data, schema, fields):
-    """Constrain opted-in display prose, never truncate sung lyrics or scene actions."""
+    """Constrain opted-in planning prose, never truncate sung lyrics or scene actions."""
     result=copy.deepcopy(data)
     changed=[]
     if not isinstance(result,dict):
         return result,changed
     for field in fields:
-        # Only known non-lyrical packaging is permitted, even if callers opt in.
-        if field not in ('description', 'title') or not isinstance(result.get(field),str):
+        # Only known non-lyrical prose is permitted, even if callers opt in.
+        # Visual identity is normalized before verses are written, so all scenes
+        # use the same saved description; never shorten individual scene actions.
+        if field not in ('description', 'title', 'characters', 'visual_world') or not isinstance(result.get(field),str):
             continue
         spec=schema.get('properties',{}).get(field,{})
         maximum=spec.get('maxLength')
@@ -46,7 +48,7 @@ def bounded_metadata(data, schema, fields):
             result[field]=value
             continue
         prefix=value[:maximum]
-        if field=='description':
+        if field in ('description', 'characters', 'visual_world'):
             stops=[m.end() for m in re.finditer(r'[.!?](?=\s|$)',prefix)]
             minimum=max(spec.get('minLength',0),maximum//2)
             if stops and stops[-1]>=minimum:
