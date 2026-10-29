@@ -1,4 +1,4 @@
-"""Turn a finished rhyme into a vertical Short using lyric-matched portrait illustrations and existing audio."""
+"""Turn a finished rhyme into a vertical Short using portrait illustrations and independently synthesized short music."""
 import argparse
 import hashlib
 import json
@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-VERSION = 'dudi-shorts-v2-portrait'
+VERSION = 'dudi-shorts-v3-portrait-music'
 
 
 def atomic_json(path, value):
@@ -56,10 +56,10 @@ def verify_video(path, seconds, vertical=False):
 
 def render_short(source_root, target, start=0, seconds=40):
     validate_clip(start, seconds)
-    source = source_root / 'video.mp4'
+    source = source_root / 'short-audio' / f'clip-{start}-{seconds}' / 'song.wav'
     info = probe(source)
-    if start + seconds > float(info['format']['duration']) + .05:
-        raise ValueError('Requested Short extends past the source video')
+    if abs(seconds - float(info['format']['duration'])) > .1:
+        raise ValueError('Independent Short music duration mismatch')
     if not any(s['codec_type'] == 'audio' for s in info.get('streams', [])):
         raise ValueError('Source video has no audio')
     from PIL import Image
@@ -91,7 +91,7 @@ def render_short(source_root, target, start=0, seconds=40):
     listing = render_scenes(portrait, scenes, width=1080, height=1920)
     try:
         subprocess.run(['ffmpeg', '-y', '-v', 'error', '-f', 'concat', '-safe', '1',
-            '-i', str(listing), '-ss', str(start), '-i', str(source),
+            '-i', str(listing), '-i', str(source),
             '-t', str(seconds), '-map', '0:v:0', '-map', '1:a:0',
             '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
             '-af', f'afade=t=in:d=0.1,afade=t=out:st={seconds-.25}:d=0.25',
@@ -120,7 +120,7 @@ def run(run_id, start=0, seconds=40, publish=False):
         raise ValueError('Invalid source run ID')
     validate_clip(start, seconds)
     source = Path('output') / run_id
-    target = Path('output/shorts') / run_id / f'portrait-clip-{start}-{seconds}'
+    target = Path('output/shorts') / run_id / f'music-portrait-clip-{start}-{seconds}'
     target.mkdir(parents=True, exist_ok=True)
     song = json.loads((source / 'song.json').read_text())
     metadata = short_metadata(song, start, seconds)
@@ -135,7 +135,7 @@ def run(run_id, start=0, seconds=40, publish=False):
     client = youtube_client()
     # Stable source/clip identity is shared by automatic and manual workflows.
     # Keep this checkpoint outside runs/ so long-video cleanup cannot delete it.
-    key = f'shorts/{run_id}/portrait-clip-{start}-{seconds}/state.json'
+    key = f'shorts/{run_id}/music-portrait-clip-{start}-{seconds}/state.json'
     state = store.load(key, {})
     if state and state.get('source_plan') != plan:
         raise ValueError('Short source changed; use a new source run ID')

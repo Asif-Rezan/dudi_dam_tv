@@ -26,6 +26,9 @@ on:
         default: scheduled
   workflow_call:
     inputs:
+      prepared_music:
+        type: boolean
+        default: false
       prepared_portraits:
         type: boolean
         default: false
@@ -55,6 +58,79 @@ concurrency:
   group: dudi-dam-tv-shorts
   cancel-in-progress: false
 jobs:
+  short_music:
+    if: ${{ !inputs.prepared_music }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      REFERENCE_AUDIO_PATH: assets/reference/style-reference.mp3
+      CLIP_START: ${{ inputs.clip_start || 0 }}
+      CLIP_SECONDS: ${{ inputs.clip_seconds || '40' }}
+      SONG_RUN_ID: ${{ inputs.run_id }}
+      ACESTEP_SOURCE_DIR: ${{ github.workspace }}/.vendor/ace-step
+      ACESTEP_CHECKPOINTS_DIR: .models/acestep
+      ACESTEP_INIT_LLM: 'false'
+      ACESTEP_GENERATION_TIMEOUT: '18000'
+      CUDA_VISIBLE_DEVICES: ''
+      OMP_NUM_THREADS: '4'
+      MKL_NUM_THREADS: '4'
+      HF_HUB_DISABLE_XET: '1'
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ace-step/ACE-Step-1.5
+          ref: ca1e85fe9430179831e6bc6be790c332190a3866
+          path: .vendor/ace-step
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Prepare CPU runner memory and audio tools
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libsndfile1
+          sudo fallocate -l 16G /swapfile-music
+          sudo chmod 600 /swapfile-music
+          sudo mkswap /swapfile-music
+          sudo swapon /swapfile-music
+          free -h
+          df -h .
+      - name: Install CPU-only music inference runtime
+        run: |
+          pip install --no-cache-dir torch==2.10.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir -r requirements.txt -r requirements-music-cpu.txt
+      - name: Verify pinned ACE-Step CPU imports
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from music_cpu import runtime
+          torch, handler, params, config, infer = runtime(Path(os.environ['ACESTEP_SOURCE_DIR']))
+          assert not torch.cuda.is_available()
+          print('Pinned ACE-Step CPU runtime imported successfully')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: kids-video-${{ inputs.source_run }}
+          run-id: ${{ inputs.source_run }}
+          github-token: ${{ github.token }}
+          path: output/
+      - name: Generate independent Shorts music
+        run: python -u short_music.py --run-id "$SONG_RUN_ID" --start "$CLIP_START" --seconds "$CLIP_SECONDS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: short-music-${{ github.run_id }}
+          path: |
+            output/*/short-audio/**/*.wav
+            output/*/short-audio/**/*.json
+          retention-days: 7
   short_images:
     if: ${{ !inputs.prepared_portraits }}
     runs-on: ubuntu-24.04
@@ -123,8 +199,8 @@ jobs:
             output/*/portrait/image-manifest-*.json
           retention-days: 7
   short:
-    needs: short_images
-    if: ${{ always() && !cancelled() && (needs.short_images.result == 'success' || needs.short_images.result == 'skipped') }}
+    needs: [short_images, short_music]
+    if: ${{ always() && !cancelled() && (needs.short_images.result == 'success' || needs.short_images.result == 'skipped') && (needs.short_music.result == 'success' || needs.short_music.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -175,7 +251,14 @@ jobs:
           github-token: ${{ github.token }}
           merge-multiple: true
           path: output/
-      - name: Render vertical Short from finished video
+      - name: Download independent Shorts music
+        uses: actions/download-artifact@v4
+        with:
+          name: short-music-${{ inputs.prepared_music && inputs.source_run || github.run_id }}
+          run-id: ${{ inputs.prepared_music && inputs.source_run || github.run_id }}
+          github-token: ${{ github.token }}
+          path: output/
+      - name: Render vertical Short with its own music
         run: python -u shorts.py --run-id "$SONG_RUN_ID" --start "$CLIP_START" --seconds "$CLIP_SECONDS"
       - uses: actions/upload-artifact@v4
         with:

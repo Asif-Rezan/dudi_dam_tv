@@ -29,7 +29,7 @@ class ShortsTests(unittest.TestCase):
 
     def test_rejects_missing_audio_and_out_of_range_before_encoding(self):
         with tempfile.TemporaryDirectory() as tmp, patch('shorts.probe') as probe, patch('shorts.subprocess.run') as encode:
-            probe.return_value = {'format':{'duration':'600'},'streams':[{'codec_type':'video'}]}
+            probe.return_value = {'format':{'duration':'40'},'streams':[{'codec_type':'video'}]}
             for start in (0, 590):
                 with self.assertRaises(ValueError):
                     shorts.render_short(Path(tmp), Path(tmp)/'short', start, 40)
@@ -39,6 +39,9 @@ class ShortsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             source, target = Path(tmp)/'source', Path(tmp)/'short'
             source.mkdir(); target.mkdir()
+            audio=source/'short-audio/clip-0-40/song.wav'
+            audio.parent.mkdir(parents=True)
+            audio.write_bytes(b'source')
             (source/'video.mp4').write_bytes(b'source')
             (target/'video.mp4').write_bytes(b'encoded')
             portrait = source/'portrait'
@@ -46,17 +49,17 @@ class ShortsTests(unittest.TestCase):
             for i in range(8):
                 Image.new('RGB',(72,128),'pink').save(portrait/f'scene-{i:03d}-source.png')
             images = {p.name:shorts.digest(p) for p in portrait.glob('*.png')}
-            plan = dict(version=shorts.VERSION, portrait_images=images, source_sha256=shorts.digest(source/'video.mp4'),
+            plan = dict(version=shorts.VERSION, portrait_images=images, source_sha256=shorts.digest(audio),
                         start=0, seconds=40, width=1080, height=1920)
             shorts.atomic_json(target/'render.json',dict(plan=plan, output_sha256=shorts.digest(target/'video.mp4')))
-            info = {'format':{'duration':'600'},'streams':[{'codec_type':'audio'}]}
+            info = {'format':{'duration':'40'},'streams':[{'codec_type':'audio'}]}
             with patch('shorts.probe',return_value=info), patch('shorts.verify_video') as verify, patch('shorts.subprocess.run') as encode, patch('motion_video.render_scenes', return_value=Path(tmp)/'clips.txt'):
                 self.assertEqual(shorts.render_short(source,target),plan)
                 verify.assert_called_once()
                 encode.assert_not_called()
                 # A modified source invalidates the cache. Simulate an encoder
                 # failure: the previous complete output must remain intact.
-                (source/'video.mp4').write_bytes(b'changed')
+                audio.write_bytes(b'changed')
                 encode.side_effect = RuntimeError('encoder failed')
                 with self.assertRaises(RuntimeError):
                     shorts.render_short(source,target)
@@ -83,7 +86,7 @@ class ShortsTests(unittest.TestCase):
                 shorts.run('episode', publish=True)
                 shorts.run('episode', publish=True)
                 self.assertEqual(publish.call_args.args[3]['video_id'],'same-video')
-                self.assertEqual(list(remote),['shorts/episode/portrait-clip-0-40/state.json'])
+                self.assertEqual(list(remote),['shorts/episode/music-portrait-clip-0-40/state.json'])
                 # Never upload changed media under an already used identity.
                 with patch('shorts.render_short',return_value=dict(plan, source_sha256='other')):
                     with self.assertRaisesRegex(ValueError,'source changed'):
@@ -123,7 +126,7 @@ class ShortsTests(unittest.TestCase):
         self.assertEqual(client.videos.return_value.update.call_count,2)
 
     def test_landscape_or_missing_illustrations_cannot_fall_back_to_blur(self):
-        info = {'format':{'duration':'600'}, 'streams':[{'codec_type':'audio'}]}
+        info = {'format':{'duration':'40'}, 'streams':[{'codec_type':'audio'}]}
         with tempfile.TemporaryDirectory() as tmp, patch('shorts.probe', return_value=info):
             root=Path(tmp)
             with self.assertRaises(FileNotFoundError):
