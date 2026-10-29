@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
+from PIL import Image
 import shorts
 
 
@@ -38,11 +39,16 @@ class ShortsTests(unittest.TestCase):
             source.mkdir(); target.mkdir()
             (source/'video.mp4').write_bytes(b'source')
             (target/'video.mp4').write_bytes(b'encoded')
-            plan = dict(version=shorts.VERSION, source_sha256=shorts.digest(source/'video.mp4'),
+            portrait = source/'portrait'
+            portrait.mkdir()
+            for i in range(8):
+                Image.new('RGB',(72,128),'pink').save(portrait/f'scene-{i:03d}-source.png')
+            images = {p.name:shorts.digest(p) for p in portrait.glob('*.png')}
+            plan = dict(version=shorts.VERSION, portrait_images=images, source_sha256=shorts.digest(source/'video.mp4'),
                         start=0, seconds=40, width=1080, height=1920)
             shorts.atomic_json(target/'render.json',dict(plan=plan, output_sha256=shorts.digest(target/'video.mp4')))
             info = {'format':{'duration':'600'},'streams':[{'codec_type':'audio'}]}
-            with patch('shorts.probe',return_value=info), patch('shorts.verify_video') as verify, patch('shorts.subprocess.run') as encode:
+            with patch('shorts.probe',return_value=info), patch('shorts.verify_video') as verify, patch('shorts.subprocess.run') as encode, patch('motion_video.render_scenes', return_value=Path(tmp)/'clips.txt'):
                 self.assertEqual(shorts.render_short(source,target),plan)
                 verify.assert_called_once()
                 encode.assert_not_called()
@@ -74,7 +80,7 @@ class ShortsTests(unittest.TestCase):
                 shorts.run('episode', publish=True)
                 shorts.run('episode', publish=True)
                 self.assertEqual(publish.call_args.args[3]['video_id'],'same-video')
-                self.assertEqual(list(remote),['shorts/episode/clip-0-40/state.json'])
+                self.assertEqual(list(remote),['shorts/episode/portrait-clip-0-40/state.json'])
                 # Never upload changed media under an already used identity.
                 with patch('shorts.render_short',return_value=dict(plan, source_sha256='other')):
                     with self.assertRaisesRegex(ValueError,'source changed'):
@@ -112,3 +118,14 @@ class ShortsTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'tags mismatch'):
             ensure_uploaded_tags(client,video,state,save)
         self.assertEqual(client.videos.return_value.update.call_count,2)
+
+    def test_landscape_or_missing_illustrations_cannot_fall_back_to_blur(self):
+        info = {'format':{'duration':'600'}, 'streams':[{'codec_type':'audio'}]}
+        with tempfile.TemporaryDirectory() as tmp, patch('shorts.probe', return_value=info):
+            root=Path(tmp)
+            with self.assertRaises(FileNotFoundError):
+                shorts.render_short(root,root/'target')
+            (root/'portrait').mkdir()
+            Image.new('RGB',(128,72),'pink').save(root/'portrait/scene-000-source.png')
+            with self.assertRaisesRegex(ValueError,'native 9:16'):
+                shorts.render_short(root,root/'target')

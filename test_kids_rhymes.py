@@ -77,6 +77,29 @@ class KidsTests(unittest.TestCase):
             self.assertEqual(generate.call_count,145)
             self.assertEqual(len(list(Path(tmp).glob('*-source.png'))),145)
 
+    def test_four_portrait_shards_cover_only_short_scenes_and_resume(self):
+        song=self.song(600)
+        with patch.dict(os.environ, IMAGE_VARIANT='portrait', CPU_IMAGE_WIDTH='576',
+                        CPU_IMAGE_HEIGHT='1024', IMAGE_SHARDS='4', CLIP_START='0', CLIP_SECONDS='40'):
+            plans=image_plan(song)
+            self.assertEqual(len(plans),8)
+            self.assertTrue(all((p['width'],p['height'])==(576,1024) for p in plans))
+            self.assertTrue(all('wide landscape' not in p['prompt'] for p in plans))
+            def fake_generate(prompt,target,**kwargs):
+                self.assertEqual((kwargs['width'],kwargs['height']),(576,1024))
+                Image.new('RGB',(72,128),'pink').save(target)
+            with tempfile.TemporaryDirectory() as tmp, patch('image_cpu.generate',side_effect=fake_generate) as generate:
+                for shard in range(4):
+                    with patch.dict(os.environ,IMAGE_SHARD=str(shard)):
+                        self.assertEqual(len(generate_song_images(tmp,song)),2)
+                        generate_song_images(tmp,song)
+                self.assertEqual(generate.call_count,8)
+                self.assertEqual(len(list((Path(tmp)/'portrait').glob('scene-*-source.png'))),8)
+                self.assertFalse(list(Path(tmp).glob('scene-*-source.png')))
+            with patch.dict(os.environ,CLIP_START='20',CLIP_SECONDS='20'):
+                self.assertEqual([p['kind'] for p in image_plan(song)],
+                                 ['scene-004','scene-005','scene-006','scene-007'])
+
     def test_render_rejects_missing_scene_before_ffmpeg(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); song=self.song(480)

@@ -1,4 +1,4 @@
-"""Turn a finished rhyme into a vertical Short without any model inference."""
+"""Turn a finished rhyme into a vertical Short using lyric-matched portrait illustrations and existing audio."""
 import argparse
 import hashlib
 import json
@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-VERSION = 'dudi-shorts-v1'
+VERSION = 'dudi-shorts-v2-portrait'
 
 
 def atomic_json(path, value):
@@ -62,7 +62,18 @@ def render_short(source_root, target, start=0, seconds=40):
         raise ValueError('Requested Short extends past the source video')
     if not any(s['codec_type'] == 'audio' for s in info.get('streams', [])):
         raise ValueError('Source video has no audio')
-    plan = dict(version=VERSION, source_sha256=digest(source), start=start, seconds=seconds,
+    from PIL import Image
+    portrait = source_root / 'portrait'
+    scenes = [{'index':i} for i in range(start//5, (start+seconds)//5)]
+    images = {}
+    for scene in scenes:
+        path = portrait / f"scene-{scene['index']:03d}-source.png"
+        with Image.open(path) as im:
+            if im.width * 16 != im.height * 9:
+                raise ValueError('Short illustration must have native 9:16 dimensions')
+            im.verify()
+        images[path.name] = digest(path)
+    plan = dict(version=VERSION, portrait_images=images, source_sha256=digest(source), start=start, seconds=seconds,
                 width=1080, height=1920)
     target.mkdir(parents=True, exist_ok=True)
     manifest = target / 'render.json'
@@ -76,18 +87,13 @@ def render_short(source_root, target, start=0, seconds=40):
             verify_video(output, seconds, vertical=True)
             return plan
     temporary = target / 'video.tmp.mp4'
-    # Keep every character visible in the foreground; fill the vertical canvas
-    # with a soft enlarged version of the same scene rather than a center crop.
-    filters = ('[0:v]split=2[bg][fg];'
-        '[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,'
-        'setsar=1,boxblur=30:2[blur];'
-        '[fg]scale=1080:1920:force_original_aspect_ratio=decrease,setsar=1[front];'
-        '[blur][front]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[out]')
+    from motion_video import render_scenes
+    listing = render_scenes(portrait, scenes, width=1080, height=1920)
     try:
-        subprocess.run(['ffmpeg', '-y', '-v', 'error', '-ss', str(start), '-i', str(source),
-            '-t', str(seconds), '-filter_complex', filters, '-map', '[out]', '-map', '0:a:0',
-            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-threads', '2',
-            '-filter_complex_threads', '2', '-r', '30', '-c:a', 'aac', '-b:a', '192k',
+        subprocess.run(['ffmpeg', '-y', '-v', 'error', '-f', 'concat', '-safe', '1',
+            '-i', str(listing), '-ss', str(start), '-i', str(source),
+            '-t', str(seconds), '-map', '0:v:0', '-map', '1:a:0',
+            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
             '-af', f'afade=t=in:d=0.1,afade=t=out:st={seconds-.25}:d=0.25',
             '-movflags', '+faststart', str(temporary)], check=True, capture_output=True)
         verify_video(temporary, seconds, vertical=True)
@@ -110,7 +116,7 @@ def run(run_id, start=0, seconds=40, publish=False):
         raise ValueError('Invalid source run ID')
     validate_clip(start, seconds)
     source = Path('output') / run_id
-    target = Path('output/shorts') / run_id / f'clip-{start}-{seconds}'
+    target = Path('output/shorts') / run_id / f'portrait-clip-{start}-{seconds}'
     target.mkdir(parents=True, exist_ok=True)
     song = json.loads((source / 'song.json').read_text())
     metadata = short_metadata(song, start, seconds)
@@ -125,7 +131,7 @@ def run(run_id, start=0, seconds=40, publish=False):
     client = youtube_client()
     # Stable source/clip identity is shared by automatic and manual workflows.
     # Keep this checkpoint outside runs/ so long-video cleanup cannot delete it.
-    key = f'shorts/{run_id}/clip-{start}-{seconds}/state.json'
+    key = f'shorts/{run_id}/portrait-clip-{start}-{seconds}/state.json'
     state = store.load(key, {})
     if state and state.get('source_plan') != plan:
         raise ValueError('Short source changed; use a new source run ID')

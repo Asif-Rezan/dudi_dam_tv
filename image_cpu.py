@@ -53,7 +53,7 @@ def negative_prompt():
 
 _pipeline = None
 
-def generate(prompt, path, seed, allow_text=False):
+def generate(prompt, path, seed, allow_text=False, width=None, height=None, steps=None):
     if allow_text:
         raise ValueError('Dudi Dam TV artwork must be text-free')
     global _pipeline
@@ -71,9 +71,9 @@ def generate(prompt, path, seed, allow_text=False):
         _pipeline.to('cpu')
         _pipeline.enable_attention_slicing()
         _pipeline.enable_vae_slicing()
-    width = int(os.getenv('CPU_IMAGE_WIDTH', '1024'))
-    height = int(os.getenv('CPU_IMAGE_HEIGHT', '576'))
-    steps = int(os.getenv('CPU_IMAGE_STEPS', '16'))
+    width = width if width is not None else int(os.getenv('CPU_IMAGE_WIDTH', '1024'))
+    height = height if height is not None else int(os.getenv('CPU_IMAGE_HEIGHT', '576'))
+    steps = steps if steps is not None else int(os.getenv('CPU_IMAGE_STEPS', '16'))
     if width % 8 or height % 8 or not 256 <= width <= 1536 or not 256 <= height <= 1536:
         raise ValueError('CPU image dimensions must be multiples of eight in 256–1536')
     if not 1 <= steps <= 50:

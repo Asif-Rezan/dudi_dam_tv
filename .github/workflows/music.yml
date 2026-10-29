@@ -249,6 +249,59 @@ jobs:
             output/*/thumbnail-source.png
             output/*/image-manifest-*.json
           retention-days: 7
+  short_images:
+    needs: lyrics
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      IMAGE_SHARD: ${{ matrix.shard }}
+      IMAGE_SHARDS: '4'
+      IMAGE_VARIANT: portrait
+      SONG_RUN_ID: ${{ needs.lyrics.outputs.run_id }}
+      CUDA_VISIBLE_DEVICES: ''
+      OMP_NUM_THREADS: '4'
+      HF_HUB_DISABLE_XET: '1'
+      HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
+      CPU_IMAGE_WIDTH: '576'
+      CPU_IMAGE_HEIGHT: '1024'
+      CPU_IMAGE_STEPS: '20'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Prepare CPU image memory
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo fallocate -l 12G /swapfile-images
+          sudo chmod 600 /swapfile-images
+          sudo mkswap /swapfile-images
+          sudo swapon /swapfile-images
+      - name: Install reference SSD-1B CPU image runtime
+        run: |
+          pip install --no-cache-dir torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir -r requirements.txt -r requirements-images-cpu.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: music-input-${{ github.run_id }}
+          path: output/
+      - name: Generate native 9:16 Shorts illustrations
+        run: python -u prepare_music.py --run-id "$SONG_RUN_ID" --stage images
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: short-artwork-${{ github.run_id }}-${{ matrix.shard }}
+          path: |
+            output/*/portrait/*.png
+            output/*/portrait/image-manifest-*.json
+          retention-days: 7
   publish:
     needs: [lyrics, music, images]
     runs-on: ubuntu-24.04
@@ -308,9 +361,10 @@ jobs:
           retention-days: 7
   shorts:
     name: Create and publish the episode Short
-    needs: [lyrics, publish]
+    needs: [lyrics, publish, short_images]
     uses: ./.github/workflows/shorts.yml
     with:
+      prepared_portraits: true
       source_run: ${{ format('{0}', github.run_id) }}
       run_id: ${{ needs.lyrics.outputs.run_id }}
       upload_mode: ${{ inputs.upload_mode || 'scheduled' }}
