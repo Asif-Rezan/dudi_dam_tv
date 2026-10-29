@@ -111,7 +111,7 @@ def short_metadata(song, start, seconds):
     #         tags=list(dict.fromkeys(song.get('tags', []) + ['Shorts', 'kids rhymes'])),
     #         source_title=song['title'], clip_start=start, clip_seconds=seconds)
     from upload_metadata import fixed_metadata
-    return dict(fixed_metadata(), source_title=song['title'],
+    return dict(fixed_metadata('shorts'), source_title=song['title'],
                 clip_start=start, clip_seconds=seconds)
 
 
@@ -147,7 +147,7 @@ def run(run_id, start=0, seconds=40, publish=False):
         store.save(key, state)
     save()
     # Shorts use YouTube's video frames; do not call the long-video thumbnail API.
-    publish_video(client, target, metadata, state, save, upload_thumbnail=False)
+    publish_video(client, target, metadata, state, save, upload_thumbnail=False, metadata_kind='shorts')
     print(json.dumps({'phase':state['phase'],'short_url':
         'https://www.youtube.com/shorts/' + state['video_id']}), flush=True)
 

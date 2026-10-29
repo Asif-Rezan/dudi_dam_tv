@@ -147,7 +147,7 @@ def youtube_client():
     return client
 
 
-def publish(client, root, song, state, save, upload_thumbnail=True):
+def publish(client, root, song, state, save, upload_thumbnail=True, metadata_kind="video"):
     from googleapiclient.http import MediaFileUpload
     if not state.get('video_id'):
         if state.get('upload_started'):
@@ -155,7 +155,7 @@ def publish(client, root, song, state, save, upload_thumbnail=True):
         from upload_settings import load_settings, upload_body
         settings = load_settings()
         from upload_metadata import fixed_metadata
-        metadata = fixed_metadata()
+        metadata = fixed_metadata(metadata_kind)
         # Previous AI/story-based upload metadata (restore both lines to revert):
         # state['upload_description'] = upload_description(song)
         # state['upload_body'] = upload_body(song, state['upload_description'], metadata_tags(song), settings)

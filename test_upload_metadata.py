@@ -21,14 +21,19 @@ class FixedUploadMetadataTests(unittest.TestCase):
             return {'items':[video]}
         client.videos.return_value.list.return_value.execute.side_effect = readback
         song = dict(title='AI story title', description='AI description', tags=['AI tag'])
+        self._check_upload(client, state, song, 'video')
+        self._check_upload(client, state, song, 'shorts')
+
+    def _check_upload(self, client, state, song, kind):
+        state.clear()
         with patch.dict('os.environ', {'UPLOAD_MODE':'public'},clear=True), \
                 patch('pipeline.required', return_value='channel'), \
                 patch('googleapiclient.http.MediaFileUpload'), \
                 patch('pipeline.upload_description') as ai_description, \
                 patch('pipeline.metadata_tags') as ai_tags:
-            publish(client, Path('/unused'), song, state, Mock(), upload_thumbnail=False)
+            publish(client, Path('/unused'), song, state, Mock(), upload_thumbnail=False, metadata_kind=kind)
         actual = client.videos.return_value.insert.call_args.kwargs['body']['snippet']
-        expected = fixed_metadata()
+        expected = fixed_metadata(kind)
         for field in ('title','description','tags'):
             self.assertEqual(actual[field],expected[field])
         self.assertEqual(actual['tags'],[])

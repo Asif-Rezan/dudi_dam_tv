@@ -22,7 +22,7 @@ class ShortsTests(unittest.TestCase):
         meta = shorts.short_metadata(song, 20, 40)
         self.assertLessEqual(len(meta['title']), 100)
         from upload_metadata import fixed_metadata
-        self.assertEqual(meta['title'],fixed_metadata()['title'])
+        self.assertEqual(meta['title'],'Dudi dudi dum dum 🍼😻#shorts #shortsfeed #dudidudidam')
         self.assertEqual(meta['description'],fixed_metadata()['description'])
         self.assertEqual(meta['tags'], [])
         self.assertEqual(meta['clip_start'], 20)
@@ -74,8 +74,9 @@ class ShortsTests(unittest.TestCase):
             with patch('shorts.render_short', return_value=plan), patch('storage.Store') as store, patch('pipeline.youtube_client'), patch('pipeline.publish') as publish:
                 store.return_value.load.side_effect = lambda key, default: copy.deepcopy(remote.get(key, default))
                 store.return_value.save.side_effect = lambda key, state: remote.update({key:copy.deepcopy(state)})
-                def uploaded(client, root, metadata, state, save, upload_thumbnail=True):
+                def uploaded(client, root, metadata, state, save, upload_thumbnail=True, metadata_kind="video"):
                     self.assertFalse(upload_thumbnail)
+                    self.assertEqual(metadata_kind,'shorts')
                     state.update(video_id='same-video',phase='scheduled')
                     save()
                 publish.side_effect = uploaded
