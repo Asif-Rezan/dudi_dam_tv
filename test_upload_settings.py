@@ -86,12 +86,23 @@ class UploadSettingsTests(unittest.TestCase):
             'upload_completed_at':'2026-10-28T12:00:00Z',
             'upload_body':upload_body({'title':'Dudi'},'description',[],settings)}
         client,save=Mock(),Mock()
-        client.videos().update().execute.side_effect=[RuntimeError('interrupted'),{}]
+        live={'id':'video','snippet':{},'status':{'privacyStatus':'private','uploadStatus':'processed'},
+              'processingDetails':{'processingStatus':'succeeded'}}
+        client.videos().list().execute.side_effect=lambda **kwargs: {'items':[copy.deepcopy(live)]}
+        calls=[]
+        def update(**kwargs):
+            calls.append(True)
+            if len(calls)==1:
+                raise RuntimeError('interrupted')
+            live['status']['publishAt']=state['schedule_target']
+            return {}
+        client.videos().update().execute.side_effect=update
         now=dt.datetime(2026,10,28,12,tzinfo=dt.timezone.utc)
         with self.assertRaises(RuntimeError): schedule_uploaded_video(client,state,save,now)
         self.assertFalse(state.get('schedule_configured',False))
         target=state['schedule_target']
-        schedule_uploaded_video(client,state,save,now+dt.timedelta(hours=2))
+        with patch('upload_settings.time.sleep'):
+            schedule_uploaded_video(client,state,save,now+dt.timedelta(hours=2))
         self.assertEqual(state['schedule_target'],target)
         self.assertTrue(state['schedule_configured'])
         call=client.videos().update.call_args.kwargs
@@ -142,3 +153,51 @@ class UploadSettingsTests(unittest.TestCase):
                 ensure_synthetic_disclosure(client,{'id':'video','status':{'privacyStatus':'private'}},state,save)
             self.assertNotIn('synthetic_disclosure_receipt',state)
             save.assert_not_called()
+
+    def test_schedule_waits_for_processing_then_recovers_recent_owned_403(self):
+        from googleapiclient.errors import HttpError
+        import httplib2
+        with patch.dict(os.environ, {'EXPECTED_CHANNEL_ID':'channel'},clear=True):
+            settings=load_settings()
+            state={'video_id':'video','upload_settings':settings,
+                'upload_completed_at':'2026-10-29T12:00:00Z',
+                'upload_body':upload_body({'title':'Dudi'},'description',[],settings)}
+            client,save=Mock(),Mock()
+            live={'id':'video','snippet':{'channelId':'channel'},
+                'status':{'privacyStatus':'private','uploadStatus':'processed'},
+                'processingDetails':{'processingStatus':'succeeded'}}
+            processing=copy.deepcopy(live)
+            processing['status']['uploadStatus']='uploaded'
+            processing['processingDetails']['processingStatus']='processing'
+            reads=[]
+            def read(**kwargs):
+                reads.append(True)
+                return {'items':[copy.deepcopy(processing if len(reads)==1 else live)]}
+            client.videos().list().execute.side_effect=read
+            error=HttpError(httplib2.Response({'status':'403'}),
+                b'{"error":{"errors":[{"reason":"forbidden"}]}}')
+            writes=[]
+            def write(**kwargs):
+                writes.append(True)
+                if len(writes)==1: raise error
+                live['status']['publishAt']=state['schedule_target']
+                return {}
+            client.videos().update().execute.side_effect=write
+            with patch('upload_settings.time.sleep'):
+                schedule_uploaded_video(client,state,save,dt.datetime(2026,10,29,12,tzinfo=dt.timezone.utc))
+            self.assertTrue(state['schedule_configured'])
+            self.assertEqual(len(writes),2)
+            self.assertFalse(state.get('schedule_pending'))
+
+    def test_schedule_reconciles_already_applied_time_without_update(self):
+        settings=load_settings()
+        state={'video_id':'video','upload_settings':settings,
+            'upload_completed_at':'2026-10-29T12:00:00Z',
+            'schedule_target':'2026-11-02T11:00:00Z',
+            'upload_body':upload_body({'title':'Dudi'},'description',[],settings)}
+        client=Mock()
+        client.videos.return_value.list.return_value.execute.return_value={'items':[
+            {'id':'video','status':{'privacyStatus':'private','publishAt':state['schedule_target']}}]}
+        schedule_uploaded_video(client,state,Mock(),dt.datetime(2026,10,29,12,tzinfo=dt.timezone.utc))
+        self.assertTrue(state['schedule_configured'])
+        client.videos.return_value.update.assert_not_called()

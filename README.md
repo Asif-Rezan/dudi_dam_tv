@@ -121,3 +121,9 @@ The `short_music` job starts immediately after lyrics, alongside long-form music
 Music requests and progress are checkpointed separately under `output/RUN_ID/short-audio/clip-START-DURATION/`. Saved outputs are fingerprinted and duration-checked. Too-short results get up to three attempts; no looping/padding is used. `short-music-*` artifacts carry the new audio and checkpoints. Automatic Shorts reuse the prepared music; manual Shorts requests launch their own music job in parallel with portrait generation. New portrait/music uploads use a separate checkpoint namespace so existing uploaded Shorts are not overwritten.
 
 Parallel jobs reduce serial waiting, but runner limits can queue jobs and synthesis time still varies. Workflows already started use their original commit; this change applies to newly started workflows.
+
+## Recover a Shorts scheduling failure
+
+New uploads wait for YouTube processing readiness before automatic scheduling, then confirm the exact frozen timestamp by readback. Temporary server/rate errors and a recent, owned private upload's generic 403 receive bounded readiness retries. Named permission/quota failures, wrong ownership, rejected processing, and changed visibility stop with the original video ID retained. Retries never insert another video or report an unconfirmed schedule as complete.
+
+For an already uploaded Short whose schedule/verification failed, run **Recover existing Shorts publication** with the failed workflow's `source_run` and original song `run_id`. It loads `short-publication-SOURCE_RUN`, requires the same uploaded video ID and source fingerprint in private Drive, and resumes only that existing video. It does not generate images, audio or video. Checkpoints are saved even if recovery fails. YouTube permission changes or service failures cannot be guaranteed away; permanent failures require resolving the reported account/service condition.

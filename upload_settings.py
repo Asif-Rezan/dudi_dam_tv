@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 from zoneinfo import ZoneInfo
 
 SETTINGS = Path(__file__).with_name('upload_settings.json')
@@ -88,10 +89,60 @@ def schedule_uploaded_video(client, state, save, now=None):
     expected = state['schedule_target']
     if dt.datetime.fromisoformat(expected.replace('Z','+00:00')) <= current:
         raise RuntimeError('Unconfirmed schedule is in the past; reconcile the existing video')
-    client.videos().update(part='status', body={'id':state['video_id'],
-        'status':state['upload_body']['status']}).execute()
-    state['schedule_configured'] = True
-    save()
+    # A newly uploaded video may not yet accept status writes. Read ownership,
+    # privacy and processing before each retry; never retry quota/auth failures.
+    from googleapiclient.errors import HttpError
+    for attempt in range(12):
+        items = client.videos().list(part='snippet,status,processingDetails',
+            id=state['video_id']).execute(num_retries=5).get('items', [])
+        if len(items) != 1 or items[0].get('id') != state['video_id']:
+            raise RuntimeError('Uploaded video unavailable')
+        video = items[0]
+        channel = os.getenv('EXPECTED_CHANNEL_ID')
+        if channel and video.get('snippet', {}).get('channelId') != channel:
+            raise RuntimeError('Uploaded channel mismatch')
+        status = video.get('status', {})
+        processing = video.get('processingDetails', {}).get('processingStatus')
+        print(json.dumps({'check':'YouTube schedule readiness','upload_status':status.get('uploadStatus'),
+            'processing_status':processing,'privacy':status.get('privacyStatus')}),flush=True)
+        if status.get('uploadStatus') in ('failed','rejected','deleted') or processing in ('failed','terminated'):
+            raise RuntimeError('YouTube rejected upload')
+        remote_time = status.get('publishAt')
+        if (status.get('privacyStatus') == 'private' and remote_time and
+                dt.datetime.fromisoformat(remote_time.replace('Z','+00:00')) ==
+                dt.datetime.fromisoformat(expected.replace('Z','+00:00'))):
+            state['schedule_configured'] = True
+            state.pop('schedule_pending', None)
+            save()
+            return
+        if status.get('privacyStatus') != 'private':
+            raise RuntimeError('Scheduling requires an existing private video; reconcile visibility')
+        if processing != 'processing' and status.get('uploadStatus') != 'uploaded':
+            try:
+                client.videos().update(part='status', body={'id':state['video_id'],
+                    'status':state['upload_body']['status']}).execute(num_retries=5)
+            except HttpError as error:
+                try:
+                    reasons = {item.get('reason') for item in json.loads(error.content).get('error',{}).get('errors',[])}
+                except (ValueError, TypeError):
+                    reasons = set()
+                code = getattr(error.resp, 'status', None)
+                finished = dt.datetime.fromisoformat(state['upload_completed_at'].replace('Z','+00:00'))
+                recent = (current - finished).total_seconds() < 900
+                temporary = code in (429,500,502,503,504) or (
+                    code == 403 and reasons == {'forbidden'} and channel and recent)
+                print(json.dumps({'check':'YouTube scheduling update','http_status':code,
+                    'reasons':sorted(str(r) for r in reasons),'retryable':bool(temporary)}),flush=True)
+                if not temporary:
+                    raise RuntimeError('YouTube scheduling permission or quota denied; saved video retained') from None
+        # Save pending state even if a runner stops during the wait. Readback on
+        # the next attempt reconciles successful writes with a lost response.
+        state['schedule_pending'] = True
+        save()
+        if attempt < 11:
+            print(json.dumps({'check':'wait for YouTube schedule readiness','attempt':attempt+1}),flush=True)
+            time.sleep(10)
+    raise TimeoutError('YouTube schedule pending; resume the existing video ID')
 
 
 def ensure_synthetic_disclosure(client, video, state, save):
