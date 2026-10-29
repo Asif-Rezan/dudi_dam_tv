@@ -1,0 +1,113 @@
+name: Create and publish a rhyme Short
+on:
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: GitHub run containing the finished kids-video artifact
+        type: string
+        required: true
+      run_id:
+        description: Original song run ID inside that artifact
+        type: string
+        required: true
+      clip_start:
+        description: Start in seconds (0, 10, 20, etc.)
+        type: number
+        default: 0
+      clip_seconds:
+        description: Short duration
+        type: choice
+        options: ['20', '30', '40', '50']
+        default: '40'
+      upload_mode:
+        description: Publication mode (requires PUBLISH_ENABLED)
+        type: choice
+        options: [scheduled, public]
+        default: scheduled
+  workflow_call:
+    inputs:
+      source_run:
+        type: string
+        required: true
+      run_id:
+        type: string
+        required: true
+      upload_mode:
+        type: string
+        default: scheduled
+    secrets:
+      YOUTUBE_TOKEN_JSON:
+        required: true
+      EXPECTED_CHANNEL_ID:
+        required: true
+      DRIVE_TOKEN_JSON:
+        required: true
+      DRIVE_FOLDER_ID:
+        required: true
+permissions:
+  contents: read
+  actions: read
+# Manual and automatic publication share one lock and one durable checkpoint.
+concurrency:
+  group: dudi-dam-tv-shorts
+  cancel-in-progress: false
+jobs:
+  short:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      SONG_RUN_ID: ${{ inputs.run_id }}
+      SOURCE_RUN: ${{ inputs.source_run }}
+      CLIP_START: ${{ inputs.clip_start || 0 }}
+      CLIP_SECONDS: ${{ inputs.clip_seconds || '40' }}
+      UPLOAD_MODE: ${{ inputs.upload_mode }}
+      YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
+      EXPECTED_CHANNEL_ID: ${{ secrets.EXPECTED_CHANNEL_ID }}
+      DRIVE_TOKEN_JSON: ${{ secrets.DRIVE_TOKEN_JSON }}
+      DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Validate source and clip identity
+        run: |
+          python - <<'PY'
+          import os, re
+          from shorts import validate_clip
+          if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', os.environ['SONG_RUN_ID']):
+              raise SystemExit('Invalid song run ID')
+          if not re.fullmatch(r'[0-9]+', os.environ['SOURCE_RUN']):
+              raise SystemExit('Invalid source GitHub run')
+          validate_clip(int(os.environ['CLIP_START']), int(os.environ['CLIP_SECONDS']))
+          PY
+      - name: Install video tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: kids-video-${{ inputs.source_run }}
+          run-id: ${{ inputs.source_run }}
+          github-token: ${{ github.token }}
+          path: output/
+      - name: Render vertical Short from finished video
+        run: python -u shorts.py --run-id "$SONG_RUN_ID" --start "$CLIP_START" --seconds "$CLIP_SECONDS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rhyme-short-${{ github.run_id }}
+          path: output/shorts/
+          retention-days: 7
+      - name: Publish or verify the same Short
+        if: vars.PUBLISH_ENABLED == 'true'
+        run: python -u shorts.py --run-id "$SONG_RUN_ID" --start "$CLIP_START" --seconds "$CLIP_SECONDS" --publish
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: short-publication-${{ github.run_id }}
+          path: output/shorts/**/*.json
+          retention-days: 7

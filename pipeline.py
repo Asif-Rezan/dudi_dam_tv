@@ -147,7 +147,7 @@ def youtube_client():
     return client
 
 
-def publish(client, root, song, state, save):
+def publish(client, root, song, state, save, upload_thumbnail=True):
     from googleapiclient.http import MediaFileUpload
     if not state.get('video_id'):
         if state.get('upload_started'):
@@ -170,7 +170,7 @@ def publish(client, root, song, state, save):
         save()
     from upload_settings import schedule_uploaded_video
     schedule_uploaded_video(client, state, save)
-    if not state.get('thumbnail_uploaded'):
+    if upload_thumbnail and not state.get('thumbnail_uploaded'):
         client.thumbnails().set(videoId=state['video_id'],
             media_body=MediaFileUpload(str(root/'thumbnail.jpg'))).execute()
         state['thumbnail_uploaded'] = True

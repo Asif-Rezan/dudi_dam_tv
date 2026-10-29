@@ -306,6 +306,15 @@ jobs:
           name: music-output-${{ github.run_id }}
           path: output/*/*.json
           retention-days: 7
+  shorts:
+    name: Create and publish the episode Short
+    needs: [lyrics, publish]
+    uses: ./.github/workflows/shorts.yml
+    with:
+      source_run: ${{ format('{0}', github.run_id) }}
+      run_id: ${{ needs.lyrics.outputs.run_id }}
+      upload_mode: ${{ inputs.upload_mode || 'scheduled' }}
+    secrets: inherit
   cleanup:
     name: Clean published media from Drive
     needs: [lyrics, publish]
