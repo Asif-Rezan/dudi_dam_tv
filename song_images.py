@@ -15,8 +15,8 @@ def image_plan(song):
     entries.append(('thumbnail', song['scenes'][0]['prompt'] + ' Close-up joyful faces, colorful nursery rhyme thumbnail.'))
     return [dict(kind=kind, prompt=prompt, seed=int(hashlib.sha256((identity+kind).encode()).hexdigest()[:8],16),
         model=MODEL, revision=REVISION, width=int(os.getenv('CPU_IMAGE_WIDTH','1024')),
-        height=int(os.getenv('CPU_IMAGE_HEIGHT','576')), steps=int(os.getenv('CPU_IMAGE_STEPS','20')),
-        visual_style='dudi-storybook-v1', allow_text=False) for kind,prompt in entries]
+        height=int(os.getenv('CPU_IMAGE_HEIGHT','576')), steps=int(os.getenv('CPU_IMAGE_STEPS','16')),
+        visual_style='dudi-storybook-v2', allow_text=False) for kind,prompt in entries]
 
 
 def generate_song_images(root, song):

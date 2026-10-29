@@ -13,6 +13,8 @@ def fake_model(schema,prompt,seed,budget=2600):
     if 'chapters' in schema['properties']:
         count=schema['properties']['chapters']['minItems']
         return {'title':f'The Shimmering Seed Adventure {seed}',
+            'characters':'A lavender baby elephant and a tiny teal turtle with a golden shell.',
+            'visual_world':'A peach-colored seaside garden with shell paths and coral flowers.',
             'story_summary':'Duck and bunny discover a shiny seed and grow a magical garden together.',
             'description':'A playful English rhyme about duck and bunny planting a seed, caring for flowers and sharing kindness.',
             'chapters':[f'Chapter {i}: find a friendly surprise in the garden' for i in range(count)]}
@@ -28,6 +30,10 @@ class WriterTests(unittest.TestCase):
             path=Path(tmp)/'draft.json'
             result=write_rhyme('2026-10-28','one',600,[],path)
             self.assertEqual(model.call_count,6)
+            outline_prompt=model.call_args_list[0].args[1]
+            self.assertIn('choose a NEW cast',outline_prompt)
+            self.assertNotIn('adventure with a yellow duckling',outline_prompt)
+            self.assertIn(result['outline']['characters'],model.call_args_list[1].args[1])
             self.assertEqual(sum(map(len,result['sections'])),60)
             self.assertTrue(result['novelty_checked'])
             self.assertEqual(result['writer_version'],VERSION)
@@ -109,6 +115,12 @@ class WriterTests(unittest.TestCase):
         self.assertEqual(novelty_reason(lines,[{'verse_lines':lines}]),'duplicate_verses')
         self.assertEqual(novelty_reason([lines[0],lines[0]],[]),'repeated_verse_in_episode')
         self.assertIsNone(novelty_reason(lines,[{'verse_lines':['gentle sea turtles build castles with sand']}]))
+
+    def test_recent_identical_cast_is_rejected(self):
+        history = [{'visual_identity': {'characters':
+            'A lavender baby elephant and a tiny teal turtle with a golden shell.'}}]
+        with patch('rhyme_writer.request_json', side_effect=fake_model), self.assertRaises(StoryGenerationError):
+            write_rhyme('2026-10-28', 'same-cast', 120, history)
 
     def test_different_run_ids_produce_different_model_seeds(self):
         with patch('rhyme_writer.request_json',side_effect=fake_model):

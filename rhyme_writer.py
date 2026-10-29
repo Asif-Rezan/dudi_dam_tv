@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from lyrics_cpu import MODEL_ID, request_story, StoryGenerationError
 
-VERSION='qwen-kids-original-v1'
+VERSION='qwen-kids-original-v2'
 REFRAIN='dudi dudi dam dam dudi dudi dam'
 
 
@@ -58,9 +58,11 @@ def write_rhyme(day, identity, seconds, history, draft_path=None):
             temp.replace(path)
     base=int(hashlib.sha256(identity.encode()).hexdigest()[:8],16)%(2**31-10000)
     chapters=(seconds+119)//120
-    recent=[{'title':h.get('title',''),'story':h.get('story_summary','')} for h in history[-12:]]
-    outline_schema={'type':'object','additionalProperties':False,'required':['title','story_summary','description','chapters'],
-        'properties':{'title':{'type':'string','minLength':8,'maxLength':65},
+    recent=[{'title':h.get('title',''),'story':h.get('story_summary',''),'visual_identity':h.get('visual_identity',{})} for h in history[-12:]]
+    outline_schema={'type':'object','additionalProperties':False,'required':['title','story_summary','description','chapters','characters','visual_world'],
+        'properties':{'characters':{'type':'string','minLength':20,'maxLength':180},
+        'visual_world':{'type':'string','minLength':20,'maxLength':160},
+        'title':{'type':'string','minLength':8,'maxLength':65},
         'story_summary':{'type':'string','minLength':40,'maxLength':400},
         'description':{'type':'string','minLength':80,'maxLength':650},
         'chapters':{'type':'array','minItems':chapters,'maxItems':chapters,'items':{'type':'string','minLength':20,'maxLength':180}}}}
@@ -71,8 +73,10 @@ def write_rhyme(day, identity, seconds, history, draft_path=None):
             save()  # Preserve identity and retry state even if the first response fails.
             state['outline']=request_json(outline_schema,
                 f'Create a NEW {seconds//60}-minute nursery rhyme episode for Dudi Dum TV on {day}. '
-                f'Creative identity {identity}; variation {attempt}. Invent a distinct adventure with a yellow duckling and white bunny. '
+                f'Creative identity {identity}; variation {attempt}. Invent a distinct adventure and choose a NEW cast suited to its story: cute baby animals, friendly little vehicles, or gentle fantasy creatures. Do not default to a duckling and bunny. '
                 f'Write {chapters} connected chapter ideas with a beginning, discoveries and a happy ending. '
+                'characters must describe 1-3 protagonists with species/type, colors and distinctive features, kept consistent throughout this episode. '
+                'visual_world must describe the story-specific setting, props and pastel palette. Vary the cast and world from recent episodes. '
                 'Teach gentle movement, kindness, colors or nature through concrete playful actions. '
                 'English title must name the actual new adventure, not a run ID. Write a concise 2-3 sentence description, 40-65 words and under 600 characters, describing this particular story. '
                 'Avoid scary situations, danger, commercial brands, adult themes, requests to subscribe and copying existing songs. '
@@ -105,7 +109,7 @@ def write_rhyme(day, identity, seconds, history, draft_path=None):
                     f'Between every two original lines the singer will sing "{REFRAIN}" for five seconds. '
                     'Do not put that refrain in your output; the arranger inserts it. '
                     'Every verse line must be different. Develop this chapter rather than repeating earlier verses. '
-                    'For each line, visual describes the same action and setting, featuring the same duckling and bunny. '
+                    'For each line, visual describes the same action and setting, featuring the episode characters with their exact appearance from the outline. Name the visible subjects, action, relevant props and setting explicitly. Match the lyric literally where possible, and vary locations as the chapter develops. '
                     'It is a text-free cartoon picture prompt, with no camera instructions or lettering. '
                     'Previous lines to avoid repeating: '+json.dumps(prior+[row['lyric'] for row in rows])+
                     '. Fix these rejected-line constraints: '+json.dumps(feedback)+f'. Rewrite attempt {retry}.',
@@ -143,6 +147,10 @@ def write_rhyme(day, identity, seconds, history, draft_path=None):
             save()
             print(json.dumps({'phase':'original AI verses written','chapter':chapter+1,'chapters':chapters,'verse_lines':len(prior)}),flush=True)
         reason=novelty_reason([normalized(line) for line in prior],history)
+        characters = normalized(outline.get('characters', ''))
+        if characters and any(characters == normalized(h.get('visual_identity', {}).get('characters', ''))
+                              for h in history[-12:]):
+            reason = 'repeated_episode_cast'
         if not reason and not any(h.get('title')==outline['title'] for h in history):
             state['novelty_checked']=True
             save()

@@ -55,6 +55,7 @@ def prepare(run_id, stage='all', check_history=False, vocal_gender='female'):
             raise DuplicateSongError()
         if store:
             entry = dict(run=run_id, title=song['title'], story_summary=song['story_summary'],
+                visual_identity=song.get('visual_identity', {}),
                 verse_lines=lines, hash=__import__('hashlib').sha256(song['lyrics'].encode()).hexdigest())
             lyric_history = [h for h in lyric_history if h.get('run') != run_id]
             lyric_history.append(entry)

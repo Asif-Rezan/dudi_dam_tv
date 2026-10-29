@@ -81,3 +81,9 @@ Verse validation keeps accepted lines and requests only missing replacements, wi
 ## Recover a finished upload
 
 Use **Recover finished video publication** with the original GitHub run number and song run ID. It restores music, scene sources, the finished MP4 and render fingerprints, verifies them, then resumes the original Drive/YouTube checkpoint without generating or uploading another video. Publication logs expose exact local guard failures without API bodies. If YouTube omits the synthetic-media readback, the publisher explicitly updates the existing video disclosure while preserving live visibility and schedule, and records a successful write receipt bound to that video. An explicit false readback still fails verification.
+
+## Lyric-led cartoon variety
+
+New episodes choose a story-specific cast (animals, friendly vehicles or gentle fantasy creatures), setting, props and pastel palette instead of always using a yellow duckling and white bunny. The cast description stays consistent within that episode. Each image prompt starts with the lyric-specific action, followed by the episode cast/world and the existing cute 3D storybook style. Recent visual identities are saved alongside lyric history to guide variety in future outlines. This guides the image model; exact character consistency and visual uniqueness still depend on its output.
+
+Use a new `run_id` for this writer version. Finished songs and old storyboards keep their existing lyrics and cast; old writer drafts require a fresh run ID.

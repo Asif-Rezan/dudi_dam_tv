@@ -28,7 +28,7 @@ def safer_prompt(prompt):
     for pattern, replacement in replacements:
         prompt = re.sub(pattern, replacement, prompt, flags=re.I)
     # Preserve the scene's visual anchor before the encoders' token limit.
-    return prompt + ' Friendly storybook animals, no violence.'
+    return prompt + ' Gentle child-friendly storybook scene, no violence.'
 
 def recovery_prompt(prompt):
     """Keep the musical mood with a restrained fully clothed composition."""

@@ -17,11 +17,14 @@ def make_song(day, history, draft_path=None, generation_id=None, vocal_gender_ov
         raise ValueError('VIDEO_DURATION_SECONDS must be 480-720, in five-second steps')
     identity = generation_id or day
     written = write_rhyme(day, identity, seconds, history, draft_path)
+    outline = written['outline']
     scenes = []
     for section in written['sections']:
         for row in section:
-            prompt=('Cute colorful 3D storybook cartoon. Same fluffy yellow duckling and white bunny. '
-                + row['visual'] + ' Rounded shapes, cheerful gentle expressions, bright pastel colors, wide landscape, no text.')
+            # Keep the lyric action before the image encoder token limit.
+            prompt=(row['visual'] + '. Cute colorful 3D storybook cartoon. '
+                + outline.get('characters', '') + '. ' + outline.get('visual_world', '')
+                + '. Rounded soft shapes, adorable expressive faces, bright pastel colors, gentle playful mood, wide landscape, no text.')
             for lyric in (row['lyric'], REFRAIN):
                 i=len(scenes)
                 scenes.append(dict(index=i,start=i*5,end=(i+1)*5,lyric=lyric,prompt=prompt))
@@ -30,6 +33,7 @@ def make_song(day, history, draft_path=None, generation_id=None, vocal_gender_ov
     song = dict(title=outline['title'], lyrics='\n'.join(scene['lyric'] for scene in scenes),duration=seconds,
         prompt='Joyful nursery rhyme, cute sweet adult female singing voice, clear English diction, playful dudi dudi dam dam refrain, major key, 100 BPM, ukulele, xylophone, soft handclaps, gentle bass, warm child-friendly mix, no shouting.',
         description=outline['description'],story_summary=outline['story_summary'],
+        visual_identity=dict(characters=outline.get('characters',''), world=outline.get('visual_world','')),
         lyric_writer=dict(backend='local-qwen-cpu',version=written['writer_version'],novelty_checked=True),
         vocal_gender='female',song_date=day,scenes=scenes,
         tags=['Dudi Dam TV','kids rhymes','nursery rhymes','Dudi Dudi Dam Dam','kids dance'])

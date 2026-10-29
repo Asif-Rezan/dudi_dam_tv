@@ -14,6 +14,8 @@ class KidsTests(unittest.TestCase):
     def setUp(self):
         def written(day,identity,seconds,history,draft_path=None):
             return dict(writer_version='qwen-kids-original-v1',outline=dict(title='Duck and Bunny Find a Rainbow',
+                characters='A lavender baby elephant and a tiny teal turtle.',
+                visual_world='A peach seaside garden with shell paths.',
                 description='A new playful story about two kind animal friends discovering a garden rainbow.',
                 story_summary='Duck and bunny follow a bright rainbow through the garden.'),
                 sections=[[dict(lyric=f'Friendly ducks discover garden number {i}',visual=f'Duckling and bunny exploring flower patch {i}')
@@ -25,6 +27,18 @@ class KidsTests(unittest.TestCase):
     def song(self, seconds=600):
         with patch.dict(os.environ, VIDEO_DURATION_SECONDS=str(seconds)):
             return kids.make_song('2026-10-28', [], generation_id='test')
+
+    def test_lyric_scene_leads_prompt_and_episode_cast_is_preserved(self):
+        song = self.song(480)
+        prompt = song['scenes'][0]['prompt']
+        self.assertTrue(prompt.startswith('Duckling and bunny exploring flower patch 0'))
+        self.assertIn(song['visual_identity']['characters'], prompt)
+        self.assertIn(song['visual_identity']['world'], prompt)
+        self.assertIn('Cute colorful 3D storybook cartoon', prompt)
+        self.assertNotIn('Same fluffy yellow duckling and white bunny', prompt)
+        changed = copy.deepcopy(song)
+        changed['scenes'][0]['prompt'] = prompt.replace('lavender baby elephant', 'pink baby dragon')
+        self.assertNotEqual(image_plan(song)[0], image_plan(changed)[0])
 
     def test_duration_and_storyboard(self):
         for seconds in (480,600,720):
