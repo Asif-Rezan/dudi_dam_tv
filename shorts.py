@@ -105,10 +105,14 @@ def render_short(source_root, target, start=0, seconds=40):
 
 
 def short_metadata(song, start, seconds):
-    return dict(title=song['title'][:90].rstrip() + ' #Shorts',
-        description=f"{seconds} seconds of {song['title']}! Sing and dance with Dudi Dam TV.\n#Shorts",
-        tags=list(dict.fromkeys(song.get('tags', []) + ['Shorts', 'kids rhymes'])),
-        source_title=song['title'], clip_start=start, clip_seconds=seconds)
+    # Previous story-based Shorts packaging; retained for easy restoration:
+    #     return dict(title=song['title'][:90].rstrip() + ' #Shorts',
+    #         description=f"{seconds} seconds of {song['title']}! Sing and dance with Dudi Dam TV.\n#Shorts",
+    #         tags=list(dict.fromkeys(song.get('tags', []) + ['Shorts', 'kids rhymes'])),
+    #         source_title=song['title'], clip_start=start, clip_seconds=seconds)
+    from upload_metadata import fixed_metadata
+    return dict(fixed_metadata(), source_title=song['title'],
+                clip_start=start, clip_seconds=seconds)
 
 
 def run(run_id, start=0, seconds=40, publish=False):

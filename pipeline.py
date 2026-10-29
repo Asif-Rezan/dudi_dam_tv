@@ -154,9 +154,14 @@ def publish(client, root, song, state, save, upload_thumbnail=True):
             raise RuntimeError('Ambiguous upload; reconcile YouTube before retry to avoid duplicates')
         from upload_settings import load_settings, upload_body
         settings = load_settings()
-        state['upload_description'] = upload_description(song)
+        from upload_metadata import fixed_metadata
+        metadata = fixed_metadata()
+        # Previous AI/story-based upload metadata (restore both lines to revert):
+        # state['upload_description'] = upload_description(song)
+        # state['upload_body'] = upload_body(song, state['upload_description'], metadata_tags(song), settings)
+        state['upload_description'] = metadata['description']
         state['upload_settings'] = settings
-        state['upload_body'] = upload_body(song, state['upload_description'], metadata_tags(song), settings)
+        state['upload_body'] = upload_body(metadata, metadata['description'], metadata['tags'], settings)
         state['upload_started'] = True
         save()
         request = client.videos().insert(part='snippet,status,paidProductPlacementDetails',

@@ -21,8 +21,10 @@ class ShortsTests(unittest.TestCase):
         song = {'title':'A' * 100, 'tags':['kids rhymes']}
         meta = shorts.short_metadata(song, 20, 40)
         self.assertLessEqual(len(meta['title']), 100)
-        self.assertTrue(meta['title'].endswith('#Shorts'))
-        self.assertEqual(meta['tags'], ['kids rhymes', 'Shorts'])
+        from upload_metadata import fixed_metadata
+        self.assertEqual(meta['title'],fixed_metadata()['title'])
+        self.assertEqual(meta['description'],fixed_metadata()['description'])
+        self.assertEqual(meta['tags'], [])
         self.assertEqual(meta['clip_start'], 20)
 
     def test_rejects_missing_audio_and_out_of_range_before_encoding(self):
