@@ -88,9 +88,27 @@ class ShortsTests(unittest.TestCase):
             {'id':'existing', 'snippet':{'channelId':'channel'},
              'status':{'containsSyntheticMedia':True}}]}
         state = {'video_id':'existing', 'upload_settings':{'mode':'public'},
-                 'upload_body':{}}
+                 'upload_body':{'snippet':{'tags':[]}}}
         with patch('pipeline.required',return_value='channel'), patch('upload_settings.verified_phase',return_value='published'):
             publish(client, Path('/unused'), {}, state, Mock(), upload_thumbnail=False)
         self.assertEqual(state['phase'],'published')
         client.thumbnails.assert_not_called()
         client.videos.return_value.insert.assert_not_called()
+
+    def test_tag_normalization_and_repair_use_existing_video(self):
+        from upload_settings import normalized_tags, ensure_uploaded_tags
+        self.assertEqual(normalized_tags(['Shorts', ' Kids  Rhymes ']),
+                         normalized_tags(['shorts', 'kids rhymes']))
+        state = {'video_id':'existing', 'upload_body':{'snippet':{
+            'title':'A rhyme', 'categoryId':'10', 'tags':['Shorts','kids rhymes']}}}
+        client, save = Mock(), Mock()
+        video = {'id':'existing', 'snippet':{'tags':['shorts','kids rhymes']}}
+        self.assertFalse(ensure_uploaded_tags(client,video,state,save))
+        client.videos.assert_not_called()
+        video['snippet']['tags'] = []
+        self.assertTrue(ensure_uploaded_tags(client,video,state,save))
+        self.assertEqual(client.videos.return_value.update.call_args.kwargs['body']['id'],'existing')
+        self.assertTrue(ensure_uploaded_tags(client,video,state,save))
+        with self.assertRaisesRegex(RuntimeError, 'tags mismatch'):
+            ensure_uploaded_tags(client,video,state,save)
+        self.assertEqual(client.videos.return_value.update.call_count,2)

@@ -189,6 +189,9 @@ def publish(client, root, song, state, save, upload_thumbnail=True):
             ensure_synthetic_disclosure(client, video, state, save)
             video = client.videos().list(part='snippet,status,processingDetails,contentDetails,paidProductPlacementDetails',
                 id=state['video_id']).execute()['items'][0]
+        from upload_settings import ensure_uploaded_tags
+        if ensure_uploaded_tags(client, video, state, save):
+            continue  # Read back the repaired metadata on the same upload.
         phase = verified_phase(video, state['upload_body'], required('EXPECTED_CHANNEL_ID'),
                                state.get('synthetic_disclosure_receipt'))
         if phase:

@@ -127,6 +127,32 @@ def ensure_synthetic_disclosure(client, video, state, save):
     save()
 
 
+def normalized_tags(tags):
+    # YouTube may normalize casing/spacing while processing a Short.
+    return {' '.join(tag.split()).casefold() for tag in tags}
+
+
+def ensure_uploaded_tags(client, video, state, save):
+    """Repair metadata on the existing ID, never upload a second video."""
+    wanted = state['upload_body']['snippet']
+    actual = video.get('snippet', {}).get('tags', [])
+    if normalized_tags(actual) == normalized_tags(wanted['tags']):
+        return False
+    if video.get('id') != state['video_id']:
+        raise RuntimeError('Uploaded video unavailable')
+    # Tags are public metadata; log these alone, never API bodies or credentials.
+    print(json.dumps({'check':'reconcile uploaded tags',
+        'expected_tags':wanted['tags'], 'actual_tags':actual}), flush=True)
+    attempts = state.get('tag_repair_attempts', 0)
+    if attempts >= 2:
+        raise RuntimeError('Uploaded tags mismatch')
+    state['tag_repair_attempts'] = attempts + 1
+    save()
+    client.videos().update(part='snippet',body={'id':state['video_id'],
+        'snippet':wanted}).execute(num_retries=5)
+    return True
+
+
 def verified_phase(video, body, channel_id, disclosure_receipt=None):
     """Return a terminal phase only for matching remote metadata and processed HD."""
     snippet, status = video.get('snippet',{}), video.get('status',{})
@@ -137,7 +163,7 @@ def verified_phase(video, body, channel_id, disclosure_receipt=None):
     for field in ('title','description','categoryId','defaultLanguage','defaultAudioLanguage'):
         if snippet.get(field) != body['snippet'][field]:
             raise RuntimeError('Uploaded metadata mismatch: ' + field)
-    if set(snippet.get('tags',[])) != set(body['snippet']['tags']):
+    if normalized_tags(snippet.get('tags',[])) != normalized_tags(body['snippet']['tags']):
         raise RuntimeError('Uploaded tags mismatch')
     for field in ('selfDeclaredMadeForKids','containsSyntheticMedia','license','embeddable','publicStatsViewable'):
         if (field=='containsSyntheticMedia' and field not in status
