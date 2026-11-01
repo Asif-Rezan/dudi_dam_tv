@@ -41,9 +41,10 @@ jobs:
         run: |
           [[ "$SONG_RUN_ID" =~ ^[a-zA-Z0-9_-]{1,80}$ ]] || exit 1
           [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]] || exit 1
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+      - name: Install video tools
+        timeout-minutes: 10
+        run: |
+          bash scripts/install-runner-packages.sh ffmpeg
           pip install -r requirements.txt
       - uses: actions/download-artifact@v4
         with:
