@@ -89,7 +89,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
+          # Installs use --no-cache-dir; no pip cache exists to save at job teardown.
       - name: Prepare CPU runner memory and audio tools
         timeout-minutes: 10
         run: |
@@ -162,7 +162,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
+          # Installs use --no-cache-dir; no pip cache exists to save at job teardown.
       - name: Prepare CPU image memory
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
