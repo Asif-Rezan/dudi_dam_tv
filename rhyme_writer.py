@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from lyrics_cpu import MODEL_ID, request_story, StoryGenerationError, LYRIC_WORD_PATTERN
 
-VERSION='qwen-kids-original-v4-cute-animal-leads'
+VERSION='qwen-kids-original-v5-babies-and-animals'
 REFRAIN='dudi dudi dam dam dudi dudi dam'
 
 
@@ -85,10 +85,10 @@ def write_rhyme(day, identity, seconds, history, draft_path=None):
             save()  # Preserve identity and retry state even if the first response fails.
             state['outline']=request_json(outline_schema,
                 f'Create a NEW {seconds//60}-minute nursery rhyme episode for Dudi Dum TV on {day}. '
-                f'Creative identity {identity}; variation {attempt}. Invent a distinct adventure and choose a NEW cast led by one or two adorable baby animals with rounded soft bodies, expressive eyes, appealing pastel colors and distinct cute features. Add one small cheerful child aged 2-4 as their playmate. Preserve the soft, whimsical animal-story atmosphere; the child joins the animals rather than replacing them as the main attraction. Vary animal species and the child appearance and clothing between episodes. '
+                f'Creative identity {identity}; variation {attempt}. Invent a distinct adventure and choose a NEW cast led by one or two adorable baby animals with rounded soft bodies, expressive eyes, appealing pastel colors and distinct cute features. Add two cute human toddlers aged 2-4 in colorful clothes as equally visible playmates. Every scene must include both human babies and animals together, never only an animal. Preserve the soft, whimsical animal-story atmosphere. Vary animal species and the child appearance and clothing between episodes. '
                 f'Write {chapters} connected chapter ideas with a beginning, discoveries and a happy ending. '
                 'Keep characters under 320 characters and visual_world under 240 characters, including spaces. '
-                'characters must describe one or two cute baby animal protagonists plus one small child playmate, with names, species, pastel colors, distinctive animal features and the child clothing, kept consistent throughout this episode. '
+                'characters must describe one or two cute baby animal protagonists plus two cute human toddler playmates, with names, species, pastel colors, distinctive animal features and the toddlers clothing, kept consistent throughout this episode. '
                 'visual_world must describe a natural dreamy outdoor setting: a flower meadow, blossom garden, forest, stream or soft cloud landscape, with lush plants, gentle natural light and a pastel palette. Never use a plain studio backdrop, stage or empty white room. Vary the cast and natural world from recent episodes. '
                 'Teach gentle movement, kindness, colors or nature through concrete playful actions. '
                 'English title must name the actual new adventure, not a run ID. Write a concise 2-3 sentence description, 40-65 words and under 600 characters, describing this particular story. '
@@ -123,7 +123,7 @@ def write_rhyme(day, identity, seconds, history, draft_path=None):
                     f'Between every two original lines the singer will sing "{REFRAIN}" for five seconds. '
                     'Do not put that refrain in your output; the arranger inserts it. '
                     'Every verse line must be different. Develop this chapter rather than repeating earlier verses. '
-                    'For each line, visual describes the same action and setting, featuring the episode characters with their exact appearance from the outline. Describe the cute baby animals first, keeping their soft rounded appearance prominent, with the small child playmate visible alongside them. Keep separate full bodies. Alternate playful dancing, waving and little steps with concrete animal-led discoveries; do not make every scene jump. Name the visible subjects, action, relevant props and setting explicitly. Describe one small event: noticing something, reacting, approaching it and sharing a happy response. Avoid static posing. Use varied dance poses and playful actions rather than repeating one pose. Match the lyric literally where possible, and vary locations as the chapter develops. '
+                    'For each line, visual describes the same action and setting, featuring the episode characters with their exact appearance from the outline. Describe BOTH human toddlers and cute baby animals at the beginning of every visual. Keep both babies and animals equally prominent with separate full bodies, hands and feet visible, playing or dancing together. Never describe a solo animal composition. Alternate playful dancing, waving and little steps with concrete animal-led discoveries; do not make every scene jump. Name the visible subjects, action, relevant props and setting explicitly. Describe one small event: noticing something, reacting, approaching it and sharing a happy response. Avoid static posing. Use varied dance poses and playful actions rather than repeating one pose. Match the lyric literally where possible, and vary locations as the chapter develops. '
                     'It is a text-free cartoon picture prompt, with no camera instructions or lettering. '
                     'Previous lines to avoid repeating: '+json.dumps(prior+[row['lyric'] for row in rows])+
                     '. Fix these rejected-line constraints: '+json.dumps(feedback)+

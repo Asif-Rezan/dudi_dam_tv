@@ -16,14 +16,15 @@ def scene_prompt(row,outline,dance=False):
     cast=outline.get('characters','')
     animals=list(dict.fromkeys(re.findall(r'\b(bunny|rabbit|hare|duckling|duck|chick|puppy|dog|kitten|cat|turtle|elephant|panda|lamb|fox|bear|deer|calf|penguin|squirrel)\b',cast,re.I)))[:2]
     subjects=' and '.join('baby '+animal.lower() for animal in animals) or 'cute baby animal friends'
-    action=('The animal friends and child dance happily together' if dance else row['visual'])
-    return ('Cute colorful 3D storybook cartoon. Adorable '+subjects+'. '
-        'Dreamy natural scenery, '+ ' '.join(outline.get('visual_world','flower garden').split()[:8])+'. '
-        'Rounded soft shapes, adorable expressive faces, bright pastel colors, gentle playful mood. '
-        'A small smiling child in colorful clothes joins the cute animals. '
-        +action+'. '+outline.get('visual_world','Dreamy natural flower garden')+'. '
-        +cast+'. Clear complete main character, full bodies, separate silhouettes, '
-        'soft natural light, dreamy flowers and trees, wide landscape, no text.')
+    action = ('All dance together, waving arms and stepping feet.' if dance
+              else 'All play together. ' + row['visual'])
+    return ('Cute colorful 3D storybook cartoon. Two cute human toddlers in colorful clothes '
+        'beside adorable '+subjects+'. Both babies and animals equally prominent, '
+        'separate full bodies, smiling faces, visible hands and feet. '+action+' '
+        'Dreamy natural flower garden, soft light, rounded shapes, pastel colors. '
+        +outline.get('visual_world','Dreamy natural flower garden')+'. '+cast+'. '
+        'The two human babies stay visible alongside the animals, no solo animal portrait, '
+        'wide landscape, no text.')
 
 
 def make_song(day, history, draft_path=None, generation_id=None, vocal_gender_override='female'):
@@ -44,10 +45,10 @@ def make_song(day, history, draft_path=None, generation_id=None, vocal_gender_ov
                 i=len(scenes)
                 dance=lyric==REFRAIN
                 prompt=scene_prompt(row,outline,dance)
-                motion_text=('Cute baby animals and child dancing together' if dance
+                motion_text=('Two human toddlers and cute baby animals dancing together' if dance
                              else row['lyric']+' '+row['visual'])+' at 120 BPM'
                 scenes.append(dict(index=i,start=i*5,end=(i+1)*5,lyric=lyric,prompt=prompt,
-                    cast_style='classic-cute-animals-with-child-v3',visual_action=motion_text,story_action=plan_scene(motion_text,i)))
+                    cast_style='cute-babies-and-animals-together-v4',visual_action=motion_text,story_action=plan_scene(motion_text,i)))
     scenes=scenes[:seconds//5]
     outline=written['outline']
     song = dict(title=outline['title'], lyrics='\n'.join(scene['lyric'] for scene in scenes),duration=seconds,

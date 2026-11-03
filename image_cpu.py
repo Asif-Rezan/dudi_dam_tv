@@ -32,7 +32,7 @@ def safer_prompt(prompt):
 
 def recovery_prompt(prompt):
     """Keep the musical mood with a restrained fully clothed composition."""
-    return safer_prompt(prompt + ' Respectful portrait, casual everyday clothing, calm expressions.')
+    return safer_prompt(prompt + ' Keep the same complete cast together, fully clothed, gentle expressions, separate full bodies.')
 
 
 # Pinned to the same public model as the Rezan After Dark reference project.
@@ -44,7 +44,7 @@ GUIDANCE_SCALE = 7.0
 def negative_prompt():
     return ('text, letters, typography, captions, Hindi writing, title, signature, watermark, logo, '
             'poster, magazine, red brushwork, elderly, old man, gray hair, deep wrinkles, '
-            'orange skin, underexposed faces, silhouette, crowd, extra people, fused faces, '
+            'orange skin, underexposed faces, silhouette, crowd, fused faces, '
             'duplicated face, cropped head, extreme close-up, deformed hands, extra limbs, extra ears, extra tails, '
             'plastic skin, blur, low quality, photorealistic, horror, frightening, collage, split screen, '
             'black panel, border, plain studio background, seamless white background, empty backdrop, ' + os.getenv('IMAGE_NEGATIVE_PROMPT', ''))

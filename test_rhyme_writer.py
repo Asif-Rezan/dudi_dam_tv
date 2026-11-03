@@ -33,7 +33,7 @@ class WriterTests(unittest.TestCase):
             outline_prompt=model.call_args_list[0].args[1]
             self.assertIn('choose a NEW cast',outline_prompt)
             self.assertIn('led by one or two adorable baby animals',outline_prompt)
-            self.assertIn('one small cheerful child',outline_prompt)
+            self.assertIn('two cute human toddlers',outline_prompt)
             self.assertNotIn('exactly two toddlers',outline_prompt)
             self.assertNotIn('adventure with a yellow duckling',outline_prompt)
             self.assertIn(result['outline']['characters'],model.call_args_list[1].args[1])

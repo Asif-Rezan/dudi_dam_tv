@@ -31,9 +31,9 @@ class KidsTests(unittest.TestCase):
     def test_lyric_scene_leads_prompt_and_episode_cast_is_preserved(self):
         song = self.song(480)
         prompt = song['scenes'][0]['prompt']
-        self.assertTrue(prompt.startswith('Cute colorful 3D storybook cartoon. Adorable baby elephant and baby turtle'))
-        self.assertIn('A small smiling child',prompt)
-        self.assertLess(prompt.index('baby elephant'),prompt.index('A small smiling child'))
+        self.assertTrue(prompt.startswith('Cute colorful 3D storybook cartoon. Two cute human toddlers'))
+        self.assertIn('baby elephant and baby turtle', prompt)
+        self.assertLess(prompt.index('human toddlers'), prompt.index('baby elephant'))
         self.assertIn('Duckling and bunny exploring flower patch 0',prompt)
         self.assertIn(song['visual_identity']['characters'], prompt)
         self.assertIn(song['visual_identity']['world'], prompt)
@@ -124,11 +124,15 @@ class KidsTests(unittest.TestCase):
         from scene_actions import plan_scene,motion_prompt
         song=self.song(480)
         for index,scene in enumerate(song['scenes']):
-            self.assertIn('A small smiling child',scene['prompt'])
+            self.assertIn('Two cute human toddlers',scene['prompt'][:100])
             self.assertIn('baby elephant',scene['prompt'][:200])
-            self.assertTrue(scene['prompt'].startswith('Cute colorful 3D storybook cartoon. Adorable'))
+            self.assertTrue(scene['prompt'].startswith('Cute colorful 3D storybook cartoon. Two cute human toddlers'))
             self.assertIn('Cute colorful 3D storybook cartoon',scene['prompt'])
             if index%2:
+                prefix=' '.join(scene['prompt'].split()[:65])
+                self.assertIn('All dance together', prefix)
+                self.assertIn('human toddlers', prefix)
+                self.assertIn('baby elephant', prefix)
                 self.assertEqual(scene['story_action']['action'],'dance')
                 self.assertEqual(plan_scene(motion_prompt(scene))['action'],'dance')
                 self.assertNotEqual(scene['prompt'],song['scenes'][index-1]['prompt'])
