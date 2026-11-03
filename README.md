@@ -166,3 +166,23 @@ Use a new run ID on updated main; a retry of an old Actions run uses its old
 commit. Existing published videos are not modified. Full model inference is
 not part of component checks; a newly generated video still needs visual and
 listening review.
+
+
+## Bounded internal-silence recovery
+
+Music quality checks now distinguish repairable short silence from excessive
+missing audio. Internal gaps up to 3.5 seconds are removed only when their total
+is at most 5% of that part and combined edge/internal trimming stays within 10%.
+Five-millisecond fades soften each edit; pitch-preserving tempo compensation
+restores the planned duration, without looping or silent padding. The finished
+mix must pass strict silence and duration checks. Larger gaps still regenerate
+only the affected part, with at most three quality attempts.
+
+Previously rejected candidates from the same run/part are checked before starting
+another CPU synthesis. Valid earlier parts are retained. Checkpoints record the
+repair windows, candidate recovery and final mastering settings; each failed
+attempt keeps a separate audio candidate. Failure artifacts include `failure.json`
+and an explicit `audio_internal_gap` diagnostic instead of a generic error.
+The 120-second part failure at 91.61–94.57 seconds is covered by a real FFmpeg
+regression including pitch and output-duration checks. Generative audio quality
+is still not guaranteed; excessive missing audio remains a visible failure.

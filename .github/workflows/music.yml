@@ -195,6 +195,7 @@ jobs:
             output/*/song.wav
             output/*/part-*.wav
             output/*/generation-state.json
+            output/*/failure.json
             output/*/worker-resources.txt
           retention-days: 7
   short_music:
