@@ -45,21 +45,38 @@ def negative_prompt():
     return ('text, letters, typography, captions, Hindi writing, title, signature, watermark, logo, '
             'poster, magazine, red brushwork, elderly, old man, gray hair, deep wrinkles, '
             'orange skin, underexposed faces, silhouette, crowd, extra people, fused faces, '
-            'duplicated face, cropped head, extreme close-up, deformed hands, extra limbs, '
+            'duplicated face, cropped head, extreme close-up, deformed hands, extra limbs, extra ears, extra tails, '
             'plastic skin, blur, low quality, photorealistic, horror, frightening, collage, split screen, '
-            'black panel, border, ' + os.getenv('IMAGE_NEGATIVE_PROMPT', ''))
+            'black panel, border, plain studio background, seamless white background, empty backdrop, ' + os.getenv('IMAGE_NEGATIVE_PROMPT', ''))
 
 
 
 _pipeline = None
 
-def generate(prompt, path, seed, allow_text=False, width=None, height=None, steps=None):
+def generate(prompt, path, seed, allow_text=False, width=None, height=None, steps=None, reference_image=None, strength=None):
     if allow_text:
         raise ValueError('Dudi Dam TV artwork must be text-free')
+    if reference_image is None and strength is not None:
+        raise ValueError('Image-to-image strength requires a reference image')
+    if reference_image is not None:
+        if strength is None or not 0 < float(strength) <= 1:
+            raise ValueError('Reference image strength must be greater than zero and at most one')
+        from PIL import Image, ImageOps
+        with Image.open(reference_image) as source:
+            initial_image=ImageOps.exif_transpose(source).convert('RGB')
     global _pipeline
     import torch
     from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler
     torch.set_num_threads(min(os.cpu_count() or 2, 4))
+    width = width if width is not None else int(os.getenv('CPU_IMAGE_WIDTH', '1024'))
+    height = height if height is not None else int(os.getenv('CPU_IMAGE_HEIGHT', '576'))
+    steps = steps if steps is not None else int(os.getenv('CPU_IMAGE_STEPS', '16'))
+    if width % 8 or height % 8 or not 256 <= width <= 1536 or not 256 <= height <= 1536:
+        raise ValueError('CPU image dimensions must be multiples of eight in 256–1536')
+    if not 1 <= steps <= 50:
+        raise ValueError('CPU generation requires 1–50 steps')
+    if reference_image is not None and int(steps*float(strength)) < 1:
+        raise ValueError('Reference strength and steps must produce at least one denoising step')
     model, revision = MODEL, REVISION
     if _pipeline is None:
         print('Loading public image-model weights on CPU', flush=True)
@@ -71,14 +88,14 @@ def generate(prompt, path, seed, allow_text=False, width=None, height=None, step
         _pipeline.to('cpu')
         _pipeline.enable_attention_slicing()
         _pipeline.enable_vae_slicing()
-    width = width if width is not None else int(os.getenv('CPU_IMAGE_WIDTH', '1024'))
-    height = height if height is not None else int(os.getenv('CPU_IMAGE_HEIGHT', '576'))
-    steps = steps if steps is not None else int(os.getenv('CPU_IMAGE_STEPS', '16'))
-    if width % 8 or height % 8 or not 256 <= width <= 1536 or not 256 <= height <= 1536:
-        raise ValueError('CPU image dimensions must be multiples of eight in 256–1536')
-    if not 1 <= steps <= 50:
-        raise ValueError('CPU generation requires 1–50 steps')
     pipeline = _pipeline
+    reference_options={}
+    if reference_image is not None:
+        from diffusers import AutoPipelineForImage2Image
+        # Share existing SSD-1B components; do not load a second copy of weights.
+        pipeline=AutoPipelineForImage2Image.from_pipe(_pipeline)
+        initial_image=ImageOps.fit(initial_image,(width,height),method=Image.Resampling.LANCZOS)
+        reference_options=dict(image=initial_image,strength=float(strength))
     start = time.monotonic()
     image = None
     initial_prompt = safer_prompt(prompt)
@@ -90,7 +107,7 @@ def generate(prompt, path, seed, allow_text=False, width=None, height=None, step
             print('Five safety rejections; retrying a restrained music portrait.', flush=True)
         result = pipeline(prompt=candidate, negative_prompt=negative_prompt(), width=width, height=height,
             num_inference_steps=steps, guidance_scale=GUIDANCE_SCALE,
-            generator=torch.Generator(device='cpu').manual_seed(seed + attempt * 10007))
+            generator=torch.Generator(device='cpu').manual_seed(seed + attempt * 10007),**reference_options)
         if any(getattr(result, 'nsfw_content_detected', None) or []):
             print(f'Image safety check rejected attempt {attempt+1}/10.', flush=True)
             continue

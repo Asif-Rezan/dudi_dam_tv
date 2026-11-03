@@ -63,7 +63,7 @@ The default upload is private without a publication timestamp. After YouTube ret
 
 Every five-second lyric scene now has continuous 25 fps camera motion: gentle alternating horizontal pan, a slow push-in, a small rhythmic pulse and vertical sway. Translucent bubbles drift independently along the edges for foreground depth. A 0.28-second dissolve uses the previous scene's actual final frame, so scene changes do not add time or shift the soundtrack. The original song is muxed once after the silent clips are joined.
 
-This gives still illustrations a lively storybook presentation; it does not rig character limbs or lip-sync mouths. Motion follows the requested 100 BPM arrangement as a visual guide, not measured audio beats. Full videos remain 1920×1080 and 8–12 minutes, with a new illustration every five seconds. Rendering is split into small clips to bound memory. `render-state.json` fingerprints the renderer version and inputs so an old static video is regenerated automatically.
+This gives still illustrations a lively storybook presentation; it does not rig character limbs or lip-sync mouths. New episodes request 120 BPM; animation follows that requested tempo, not measured audio beats. Full videos remain 1920×1080 and 8–12 minutes, with a new illustration every five seconds. Rendering is split into small clips to bound memory. `render-state.json` fingerprints the renderer version and inputs so an old static video is regenerated automatically.
 
 For a local short preview without model inference or publishing, run `python preview_motion.py image1.png image2.png --audio song.wav --output output/motion-preview.mp4`. Preview images/audio are supplied locally and are never used as a production fallback.
 
@@ -127,3 +127,42 @@ Parallel jobs reduce serial waiting, but runner limits can queue jobs and synthe
 New uploads wait for YouTube processing readiness before automatic scheduling, then confirm the exact frozen timestamp by readback. Temporary server/rate errors and a recent, owned private upload's generic 403 receive bounded readiness retries. Named permission/quota failures, wrong ownership, rejected processing, and changed visibility stop with the original video ID retained. Retries never insert another video or report an unconfirmed schedule as complete.
 
 For an already uploaded Short whose schedule/verification failed, run **Recover existing Shorts publication** with the failed workflow's `source_run` and original song `run_id`. It loads `short-publication-SOURCE_RUN`, requires the same uploaded video ID and source fingerprint in private Drive, and resumes only that existing video. It does not generate images, audio or video. Checkpoints are saved even if recovery fails. YouTube permission changes or service failures cannot be guaranteed away; permanent failures require resolving the reported account/service condition.
+
+
+## Reference thumbnails, character motion and continuous music
+
+New generations use the same generation pipeline upgrades as
+`Asif-Rezan/youtube-motivation-automation` at `73533e7`:
+
+- Five bundled thumbnail references are selected with equal probability using a
+  stable generation seed. A retry or another shard reuses the same reference.
+  Consecutive generations may select the same picture. Strength defaults to
+  `0.50`; `THUMBNAIL_REFERENCE_IMAGE` remains an explicit single-file override.
+  Only thumbnails use references. SSD-1B generates at 1344×768, then crops six
+  pixels from the top and bottom and exports a 1920×1080 JPEG below 2 MB.
+- New lyric outlines keep one or two cute baby animals as the main characters,
+  with a small child companion in a dreamy natural setting. The soft, rounded
+  3D storybook style and five-second image changes remain.
+- Landscape and portrait image shards prepare foreground masks, inpainted
+  backgrounds and validated five-second clips. Actors get varied gentle waves,
+  waist/leg motion, sways or hops, with conservative blinking where faces are
+  detected confidently. Camera/background motion adds depth. This is image
+  deformation, not generative video or full skeletal animation. Invalid masks
+  use a logged camera-motion recovery; unrelated errors still stop the job.
+- New music requests 120 BPM in the prompt and the model parameters, with
+  continuous instrumental backing. Mastering targets -14 LUFS / -1.5 dBTP and
+  80 ms joins. Bounded edge-silence repair preserves duration without pitch
+  shifts; excessive gaps retry only the affected part. Native Shorts audio is
+  recovered from valid checkpoints before synthesizing again. These checks
+  detect substantial silence; they do not guarantee flawless musical phrasing.
+- CPU music workers reserve runner resources, retain failure diagnostics and
+  save completed parts. Lyrics retain accepted lines during bounded repairs.
+  Cleanup preserves media on metadata mismatches and reports API failures.
+
+Both long videos and Shorts receive the animation and music upgrades. The
+existing dedicated Drive folder, channel secrets, fixed public metadata,
+72-hour / 6 AM New York scheduling, and bounded package installer are retained.
+Use a new run ID on updated main; a retry of an old Actions run uses its old
+commit. Existing published videos are not modified. Full model inference is
+not part of component checks; a newly generated video still needs visual and
+listening review.

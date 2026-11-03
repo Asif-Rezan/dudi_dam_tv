@@ -32,6 +32,9 @@ class WriterTests(unittest.TestCase):
             self.assertEqual(model.call_count,6)
             outline_prompt=model.call_args_list[0].args[1]
             self.assertIn('choose a NEW cast',outline_prompt)
+            self.assertIn('led by one or two adorable baby animals',outline_prompt)
+            self.assertIn('one small cheerful child',outline_prompt)
+            self.assertNotIn('exactly two toddlers',outline_prompt)
             self.assertNotIn('adventure with a yellow duckling',outline_prompt)
             self.assertIn(result['outline']['characters'],model.call_args_list[1].args[1])
             self.assertEqual(sum(map(len,result['sections'])),60)
@@ -150,3 +153,28 @@ class WriterTests(unittest.TestCase):
             second=write_rhyme('2026-10-28','second',480,[])
         self.assertNotEqual(first['outline'],second['outline'])
         self.assertNotEqual(first['sections'],second['sections'])
+
+    def test_rejected_long_line_is_sent_for_targeted_rewrite(self):
+        from lyrics_cpu import LYRIC_WORD_PATTERN
+        from jsonschema import Draft202012Validator
+        calls=[]
+        long_line='One two three four five six seven eight nine ten eleven twelve thirteen'
+        def model(schema,prompt,seed,budget=2600):
+            result=fake_model(schema,prompt,seed,budget)
+            if 'verses' in result:
+                calls.append((copy.deepcopy(schema),prompt))
+                if len(calls)==1:
+                    result['verses'][0]['lyric']=long_line
+            return result
+        with patch('rhyme_writer.request_json',side_effect=model):
+            result=write_rhyme('2026-11-01','long-line-regression',120,[])
+        self.assertEqual(len(result['sections'][0]),12)
+        self.assertEqual(len(calls),2)
+        self.assertIn(long_line,calls[1][1])
+        lyric_schema=calls[0][0]['properties']['verses']['items']['properties']['lyric']
+        self.assertEqual(lyric_schema['pattern'],LYRIC_WORD_PATTERN)
+        validator=Draft202012Validator(lyric_schema)
+        self.assertTrue(validator.is_valid('Tiny bunny hops beside flowers'))
+        self.assertFalse(validator.is_valid(long_line))
+        for line in ('One two three',"Tiny bunny's ears dance and sway",'one two three four-five'):
+            self.assertFalse(validator.is_valid(line))

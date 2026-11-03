@@ -81,3 +81,12 @@ class BoundsTests(unittest.TestCase):
             failure=json.loads((Path(directory)/'output/new-song/failure.json').read_text())
             self.assertEqual(failure['details'],{'field':'description'})
             self.assertNotIn('secret token',(Path(directory)/'output/private-error/failure.json').read_text())
+
+    def test_compact_word_constraint_is_retained_in_native_grammar(self):
+        from lyrics_cpu import LYRIC_WORD_PATTERN
+        result,model=self.request({'lyric':'Tiny bunny hops beside flowers'},
+            {'lyric':{'type':'string','maxLength':100,'pattern':LYRIC_WORD_PATTERN}},[])
+        schema=model.create_chat_completion.call_args.kwargs['response_format']['schema']
+        self.assertEqual(schema['properties']['lyric']['pattern'],LYRIC_WORD_PATTERN)
+        self.assertNotIn('maxLength',schema['properties']['lyric'])
+        self.assertEqual(result['lyric'],'Tiny bunny hops beside flowers')

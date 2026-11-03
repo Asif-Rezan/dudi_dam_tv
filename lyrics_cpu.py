@@ -15,6 +15,8 @@ GGUF_REVISION = 'a06e946bb6b655725eafa393f4a9745d460374c9'
 GGUF_FILE = 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
 GGUF_SHA256 = '3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597'
 CONTEXT_TOKENS = 16384
+# A small, bounded word grammar is safe to retain; large prose bounds are not.
+LYRIC_WORD_PATTERN = r'^[A-Za-z]+( [A-Za-z]+){3,11}[.!?]?$'
 _model = None
 
 
@@ -124,7 +126,8 @@ def request_story(endpoint, payload):
         if isinstance(node, dict):
             node.pop('minLength', None)
             node.pop('maxLength', None)
-            node.pop('pattern', None)
+            if node.get('pattern') != LYRIC_WORD_PATTERN:
+                node.pop('pattern', None)
             for value in node.values():
                 remove_string_bounds(value)
         elif isinstance(node, list):
@@ -186,6 +189,8 @@ def request_story(endpoint, payload):
                 correction += f' The required {issue} is {bound}; the prior length was {actual}.'
                 if issue=='maxLength':
                     correction += f' Write this field in no more than {max(1,int(bound*.65))} characters including spaces. Characters are not words.'
+            if issue == 'pattern':
+                correction += ' Every lyric must have 4 to 12 plain English words, single spaces, no apostrophes or hyphens. Aim for 6 words.'
             if issue == 'incomplete_output':
                 correction += ' Shorten prose and lyric lines so the entire JSON fits the output budget.'
             messages.append({'role': 'user', 'content': correction +

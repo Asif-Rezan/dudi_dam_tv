@@ -67,7 +67,7 @@ def new_york_publish_time(upload_finished):
     return candidate.astimezone(dt.timezone.utc).isoformat().replace('+00:00','Z')
 
 
-def schedule_uploaded_video(client, state, save, now=None):
+def schedule_uploaded_video(client, state, save, now=None, *, deadline=None):
     """Upload privately, then set a stable post-upload schedule; retries reuse it."""
     settings = state['upload_settings']
     if settings['mode'] != 'scheduled' or settings.get('publish_at') or state.get('schedule_configured'):
@@ -92,7 +92,13 @@ def schedule_uploaded_video(client, state, save, now=None):
     # A newly uploaded video may not yet accept status writes. Read ownership,
     # privacy and processing before each retry; never retry quota/auth failures.
     from googleapiclient.errors import HttpError
-    for attempt in range(12):
+    started = time.monotonic()
+    stop_at = min(deadline, started + 1800) if deadline is not None else started + 1800
+    # Processing routinely exceeds two minutes. Poll for up to thirty minutes,
+    # while retaining an independent attempt bound for a stalled clock/test.
+    for attempt in range(90):
+        if time.monotonic() >= stop_at:
+            break
         items = client.videos().list(part='snippet,status,processingDetails',
             id=state['video_id']).execute(num_retries=5).get('items', [])
         if len(items) != 1 or items[0].get('id') != state['video_id']:
@@ -128,7 +134,7 @@ def schedule_uploaded_video(client, state, save, now=None):
                     reasons = set()
                 code = getattr(error.resp, 'status', None)
                 finished = dt.datetime.fromisoformat(state['upload_completed_at'].replace('Z','+00:00'))
-                recent = (current - finished).total_seconds() < 900
+                recent = (current - finished).total_seconds() + (time.monotonic() - started) < 900
                 temporary = code in (429,500,502,503,504) or (
                     code == 403 and reasons == {'forbidden'} and channel and recent)
                 print(json.dumps({'check':'YouTube scheduling update','http_status':code,
@@ -139,9 +145,9 @@ def schedule_uploaded_video(client, state, save, now=None):
         # the next attempt reconciles successful writes with a lost response.
         state['schedule_pending'] = True
         save()
-        if attempt < 11:
+        if attempt < 89 and time.monotonic() < stop_at:
             print(json.dumps({'check':'wait for YouTube schedule readiness','attempt':attempt+1}),flush=True)
-            time.sleep(10)
+            time.sleep(min(20, max(0, stop_at - time.monotonic())))
     raise TimeoutError('YouTube schedule pending; resume the existing video ID')
 
 

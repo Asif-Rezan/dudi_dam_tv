@@ -234,6 +234,52 @@ class UploadSettingsTests(unittest.TestCase):
         with patch('upload_settings.time.sleep'):
             with self.assertRaises(TimeoutError):
                 schedule_uploaded_video(client,state,Mock(),dt.datetime(2026,10,29,12,tzinfo=dt.timezone.utc))
-        self.assertEqual(client.videos.return_value.list.call_count,12)
+        self.assertEqual(client.videos.return_value.list.call_count,90)
         self.assertTrue(state['schedule_pending'])
         client.videos.return_value.update.assert_not_called()
+
+    def test_processing_longer_than_old_two_minute_window_schedules_same_video(self):
+        with patch.dict(os.environ, {'EXPECTED_CHANNEL_ID':'channel'}, clear=True):
+            settings=load_settings()
+            state={'video_id':'existing-short','upload_settings':settings,
+                'upload_completed_at':'2026-10-29T12:00:00Z',
+                'upload_body':upload_body({'title':'Dudi'},'description',[],settings)}
+            client,save=Mock(),Mock()
+            processing={'id':'existing-short','snippet':{'channelId':'channel'},
+                'status':{'privacyStatus':'private','uploadStatus':'uploaded'},
+                'processingDetails':{'processingStatus':'processing'}}
+            ready=copy.deepcopy(processing)
+            ready['status']['uploadStatus']='processed'
+            ready['processingDetails']['processingStatus']='succeeded'
+            reads=[]
+            def read(**kwargs):
+                reads.append(True)
+                result=copy.deepcopy(processing if len(reads)<=15 else ready)
+                if len(reads)>16:
+                    result['status']['publishAt']=state['schedule_target']
+                return {'items':[result]}
+            client.videos().list().execute.side_effect=read
+            with patch('upload_settings.time.sleep') as sleep:
+                schedule_uploaded_video(client,state,save,dt.datetime(2026,10,29,12,tzinfo=dt.timezone.utc))
+            self.assertTrue(state['schedule_configured'])
+            self.assertEqual(state['video_id'],'existing-short')
+            self.assertEqual(state['schedule_target'],new_york_publish_time(dt.datetime(2026,10,29,12,tzinfo=dt.timezone.utc)))
+            client.videos().insert.assert_not_called()
+            client.videos().update.assert_called_once()
+            self.assertGreaterEqual(sleep.call_count,15)
+
+    def test_schedule_obeys_shared_deadline_and_keeps_same_id_for_recovery(self):
+        settings=load_settings()
+        state={'video_id':'existing-short','upload_settings':settings,
+            'upload_completed_at':'2026-10-29T12:00:00Z',
+            'upload_body':upload_body({'title':'Dudi'},'description',[],settings)}
+        client,save=Mock(),Mock()
+        client.videos().list().execute.return_value={'items':[
+            {'id':'existing-short','status':{'privacyStatus':'private','uploadStatus':'uploaded'},
+             'processingDetails':{'processingStatus':'processing'}}]}
+        with patch('upload_settings.time.monotonic',side_effect=[0,0,1,2,3]), patch('upload_settings.time.sleep'):
+            with self.assertRaisesRegex(TimeoutError,'resume the existing video ID'):
+                schedule_uploaded_video(client,state,save,dt.datetime(2026,10,29,12,tzinfo=dt.timezone.utc),deadline=3)
+        self.assertTrue(state['schedule_pending'])
+        self.assertEqual(state['video_id'],'existing-short')
+        client.videos().insert.assert_not_called()

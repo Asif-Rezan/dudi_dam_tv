@@ -5,6 +5,7 @@ import datetime as dt
 import gc
 import json
 import re
+import time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from pipeline import make_song, render, duration, validate_duration, validate_song, song_duplicate_reason, pipeline_failure_message
@@ -92,6 +93,32 @@ def prepare(run_id, stage='all', check_history=False, vocal_gender='female'):
     print(json.dumps({'run_id': run_id, 'phase': 'prepared', 'title': song['title'],
         'duration': duration(root/'video.mp4')}), flush=True)
 
+def prepare_with_retries(run_id, stage='all', check_history=False, vocal_gender='female'):
+    """Resume saved lyrics only for explicitly retryable model/content failures."""
+    from lyrics_cpu import StoryGenerationError
+    for attempt in range(3):
+        try:
+            result=prepare(run_id,stage,check_history=check_history,vocal_gender=vocal_gender)
+            failure=Path('output')/run_id/'failure.json'
+            if failure.exists():
+                try:
+                    previous=json.loads(failure.read_text())
+                except (OSError,ValueError):
+                    previous={}
+                if previous.get('stage')==stage:
+                    failure.unlink(missing_ok=True)
+            if attempt:
+                print(json.dumps({'phase':'lyrics stage recovered','attempt':attempt+1}),flush=True)
+            return result
+        except StoryGenerationError as error:
+            record_failure(run_id,stage,error)
+            if stage != 'lyrics' or not error.retryable or attempt == 2:
+                raise
+            print(json.dumps({'phase':'resume saved lyrics after retryable failure',
+                'attempt':attempt+1,'maximum_attempts':3,'error_code':error.code}),flush=True)
+            time.sleep(5*(attempt+1))
+
+
 def record_failure(run_id,stage,error):
     """Persist safe diagnostics even if the first model response never completed."""
     if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}',run_id):
@@ -117,7 +144,7 @@ if __name__ == '__main__':
     parser.add_argument('--vocal-gender', choices=['auto', 'male', 'female'], default='female')
     args = parser.parse_args()
     try:
-        prepare(args.run_id, args.stage, check_history=args.check_history, vocal_gender=args.vocal_gender)
+        prepare_with_retries(args.run_id, args.stage, check_history=args.check_history, vocal_gender=args.vocal_gender)
     except Exception as error:
         try:
             record_failure(args.run_id,args.stage,error)

@@ -59,7 +59,7 @@ jobs:
       restore_artifacts: ${{ steps.recovery.outputs.artifact_names || '[]' }}
     env:
       LYRICS_MODEL: Qwen/Qwen3-4B-Instruct-2507
-      OMP_NUM_THREADS: '4'
+      OMP_NUM_THREADS: '3'
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
       REQUESTED_RUN_ID: ${{ inputs.run_id }}
@@ -137,8 +137,8 @@ jobs:
       ACESTEP_INIT_LLM: 'false'
       ACESTEP_GENERATION_TIMEOUT: '18000'
       CUDA_VISIBLE_DEVICES: ''
-      OMP_NUM_THREADS: '4'
-      MKL_NUM_THREADS: '4'
+      OMP_NUM_THREADS: '3'
+      MKL_NUM_THREADS: '3'
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
     steps:
@@ -195,6 +195,7 @@ jobs:
             output/*/song.wav
             output/*/part-*.wav
             output/*/generation-state.json
+            output/*/worker-resources.txt
           retention-days: 7
   short_music:
     needs: lyrics
@@ -207,8 +208,8 @@ jobs:
       ACESTEP_INIT_LLM: 'false'
       ACESTEP_GENERATION_TIMEOUT: '18000'
       CUDA_VISIBLE_DEVICES: ''
-      OMP_NUM_THREADS: '4'
-      MKL_NUM_THREADS: '4'
+      OMP_NUM_THREADS: '3'
+      MKL_NUM_THREADS: '3'
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
     steps:
@@ -263,11 +264,12 @@ jobs:
           path: |
             output/*/short-audio/**/*.wav
             output/*/short-audio/**/*.json
+            output/*/short-audio/**/worker-resources.txt
           retention-days: 7
   images:
     needs: lyrics
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -277,12 +279,16 @@ jobs:
       IMAGE_SHARDS: '16'
       SONG_RUN_ID: ${{ needs.lyrics.outputs.run_id }}
       CUDA_VISIBLE_DEVICES: ''
-      OMP_NUM_THREADS: '4'
+      OMP_NUM_THREADS: '3'
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
       CPU_IMAGE_WIDTH: '1024'
       CPU_IMAGE_HEIGHT: '576'
       CPU_IMAGE_STEPS: '20'
+      THUMBNAIL_IMAGE_WIDTH: '1344'
+      THUMBNAIL_IMAGE_HEIGHT: '768'
+      THUMBNAIL_IMAGE_STEPS: '20'
+      THUMBNAIL_DENOISE_STRENGTH: '0.50'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -308,6 +314,11 @@ jobs:
           path: output/
       - name: Generate lyric-matched five-second scenes
         run: python -u prepare_music.py --run-id "$SONG_RUN_ID" --stage images
+      - name: Prepare automatic character layers and animated scene clips
+        run: |
+          bash scripts/install-runner-packages.sh ffmpeg
+          pip install --no-cache-dir -r requirements-motion-cpu.txt
+          python -u character_motion.py --root "output/$SONG_RUN_ID"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -316,11 +327,13 @@ jobs:
             output/*/scene-*-source.png
             output/*/thumbnail-source.png
             output/*/image-manifest-*.json
+            output/*/characters/**
+            output/*/motion/**
           retention-days: 7
   short_images:
     needs: lyrics
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -331,7 +344,7 @@ jobs:
       IMAGE_VARIANT: portrait
       SONG_RUN_ID: ${{ needs.lyrics.outputs.run_id }}
       CUDA_VISIBLE_DEVICES: ''
-      OMP_NUM_THREADS: '4'
+      OMP_NUM_THREADS: '3'
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
       CPU_IMAGE_WIDTH: '576'
@@ -362,6 +375,11 @@ jobs:
           path: output/
       - name: Generate native 9:16 Shorts illustrations
         run: python -u prepare_music.py --run-id "$SONG_RUN_ID" --stage images
+      - name: Prepare automatic character layers and animated scene clips
+        run: |
+          bash scripts/install-runner-packages.sh ffmpeg
+          pip install --no-cache-dir -r requirements-motion-cpu.txt
+          python -u character_motion.py --root "output/$SONG_RUN_ID"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -369,6 +387,8 @@ jobs:
           path: |
             output/*/portrait/*.png
             output/*/portrait/image-manifest-*.json
+            output/*/portrait/characters/**
+            output/*/portrait/motion/**
           retention-days: 7
   publish:
     needs: [lyrics, music, images]
@@ -442,7 +462,10 @@ jobs:
   cleanup:
     name: Clean published media from Drive
     needs: [lyrics, publish]
-    if: vars.PUBLISH_ENABLED == 'true'
+    if: ${{ always() && !cancelled() && needs.publish.result == 'success' && vars.PUBLISH_ENABLED == 'true' }}
+    concurrency:
+      group: dudi-drive-cleanup
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:

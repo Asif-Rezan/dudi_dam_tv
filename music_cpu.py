@@ -98,7 +98,7 @@ def synthesize(song, target, source, model_root):
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     os.environ['ACESTEP_VAE_DECODE_CHUNK_SIZE'] = '128'
     torch, Handler, Params, Config, infer = runtime(source)
-    torch.set_num_threads(min(4, os.cpu_count() or 1))
+    torch.set_num_threads(min(3, max(1, (os.cpu_count() or 1) - 1)))
     torch.set_num_interop_threads(1)
     handler = Handler()
     print(json.dumps({'phase':'loading music model', 'model':MODEL, 'device':'cpu'}), flush=True)
@@ -109,7 +109,7 @@ def synthesize(song, target, source, model_root):
     if not ready or handler.device != 'cpu':
         raise RuntimeError('ACE-Step CPU initialization failed')
     params = Params(caption=song['prompt'], lyrics=song['lyrics'],
-        duration=song['duration'], reference_audio=reference_audio(), vocal_language='en', instrumental=False,
+        duration=song['duration'], bpm=song.get('bpm'), reference_audio=reference_audio(), vocal_language='en', instrumental=False,
         inference_steps=8, thinking=False, use_cot_metas=False,
         use_cot_caption=False, use_cot_language=False)
     config = Config(batch_size=1, audio_format='wav', allow_lm_batch=False)
@@ -154,16 +154,18 @@ def generate_segment(song, target, state, save):
     save()
     request = target.parent/'cpu-song-input.json'
     request.write_text(json.dumps(song, ensure_ascii=False))
+    from worker_limits import run_worker, WorkerFailure
     try:
-        subprocess.run([sys.executable, '-u', str(Path(__file__).resolve()),
+        run_worker([sys.executable, '-u', str(Path(__file__).resolve()),
             '--song', str(request.resolve()), '--target', str(target.resolve()),
-            '--source', str(source), '--models', str(model_root)], check=True, timeout=WORKER_TIMEOUT)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        state.update(generation_started=False, generation_failed='Local CPU worker failed; saved lyrics retained')
+            '--source', str(source), '--models', str(model_root)], timeout=WORKER_TIMEOUT,
+            diagnostic=target.parent/'worker-resources.txt')
+        if abs(duration(target) - song['duration']) > 2:
+            raise ValueError('Invalid generated segment duration')
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, WorkerFailure, OSError, ValueError) as exc:
+        state.update(generation_started=False, generation_failed=str(exc), audio_ready=False)
         save()
-        raise RuntimeError('Local ACE-Step CPU worker failed; resume the saved run') from None
-    if abs(duration(target) - song['duration']) > 2:
-        raise ValueError('Invalid generated segment duration')
+        raise RuntimeError('Local ACE-Step CPU worker failed; saved lyrics and parts retained: ' + str(exc)) from exc
     state.pop('generation_failed', None)
     state.update(audio_ready=True, generation_started=False)
     save()

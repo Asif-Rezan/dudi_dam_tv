@@ -174,13 +174,13 @@ def publish(client, root, song, state, save, upload_thumbnail=True, metadata_kin
         state['upload_completed_at'] = dt.datetime.now(dt.timezone.utc).isoformat()
         save()
     from upload_settings import schedule_uploaded_video
-    schedule_uploaded_video(client, state, save)
+    deadline = time.monotonic() + 2400
+    schedule_uploaded_video(client, state, save, deadline=deadline)
     if upload_thumbnail and not state.get('thumbnail_uploaded'):
         client.thumbnails().set(videoId=state['video_id'],
             media_body=MediaFileUpload(str(root/'thumbnail.jpg'))).execute()
         state['thumbnail_uploaded'] = True
         save()
-    deadline = time.monotonic() + 1800
     while time.monotonic() < deadline:
         items = client.videos().list(part='snippet,status,processingDetails,contentDetails,paidProductPlacementDetails',
                                     id=state['video_id']).execute().get('items', [])

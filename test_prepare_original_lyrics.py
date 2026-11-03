@@ -45,3 +45,48 @@ class PrepareOriginalTests(unittest.TestCase):
             song=fixture_song();song.pop('lyric_writer')
             (root/'song.json').write_text(json.dumps(song))
             with self.assertRaises(ValueError):prepare('legacy',stage='lyrics')
+
+    def test_retryable_lyric_failure_resumes_same_identity_and_is_bounded(self):
+        from prepare_music import prepare_with_retries
+        from lyrics_cpu import StoryGenerationError
+        error=StoryGenerationError('Retry from saved draft',code='lyrics_verse_validation',retryable=True)
+        with patch('prepare_music.prepare',side_effect=[error,None]) as run, \
+             patch('prepare_music.record_failure') as failure, patch('prepare_music.time.sleep'):
+            prepare_with_retries('same-id','lyrics',True,'female')
+        self.assertEqual(run.call_count,2)
+        self.assertEqual(run.call_args_list[0],run.call_args_list[1])
+        failure.assert_called_once()
+        with patch('prepare_music.prepare',side_effect=error) as run, \
+             patch('prepare_music.record_failure'), patch('prepare_music.time.sleep'):
+            with self.assertRaises(StoryGenerationError):
+                prepare_with_retries('same-id','lyrics')
+        self.assertEqual(run.call_count,3)
+
+    def test_fatal_errors_and_nonlyrics_stages_are_not_replayed(self):
+        from prepare_music import prepare_with_retries
+        from lyrics_cpu import StoryGenerationError
+        for stage,error in [('lyrics',ValueError('bad identity')),
+                            ('lyrics',StoryGenerationError('bad configuration')),
+                            ('render',StoryGenerationError('no replay',retryable=True))]:
+            with self.subTest(stage=stage),patch('prepare_music.prepare',side_effect=error) as run, \
+                 patch('prepare_music.record_failure'),patch('prepare_music.time.sleep') as sleep:
+                with self.assertRaises(type(error)):
+                    prepare_with_retries('same-id',stage)
+                run.assert_called_once()
+                sleep.assert_not_called()
+
+    def test_success_clears_only_its_own_failure_marker(self):
+        from prepare_music import prepare_with_retries
+        with tempfile.TemporaryDirectory() as tmp:
+            old=os.getcwd();os.chdir(tmp)
+            self.addCleanup(os.chdir,old)
+            marker=Path('output/recovered/failure.json')
+            marker.parent.mkdir(parents=True)
+            marker.write_text(json.dumps({'stage':'lyrics','retryable':True}))
+            with patch('prepare_music.prepare'):
+                prepare_with_retries('recovered','lyrics')
+            self.assertFalse(marker.exists())
+            marker.write_text(json.dumps({'stage':'render','retryable':False}))
+            with patch('prepare_music.prepare'):
+                prepare_with_retries('recovered','lyrics')
+            self.assertTrue(marker.exists())

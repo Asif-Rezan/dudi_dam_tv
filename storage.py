@@ -75,12 +75,12 @@ class Store:
             return default
         return json.loads(drive_retry(lambda: self.client.files().get_media(fileId=file_id).execute()))
 
-    def check_quota(self, size):
+    def check_quota(self, size, reserve_bytes=100 * 1024**2):
         quota = drive_retry(lambda: self.client.about().get(fields='storageQuota').execute())['storageQuota']
         if 'limit' not in quota:
             raise RuntimeError('Cannot verify free storage allowance; stop before upload')
         limit = min(int(quota['limit']), 15 * 1024**3)
-        if int(quota.get('usage', 0)) + size + 100 * 1024**2 > limit:
+        if int(quota.get('usage', 0)) + size + reserve_bytes > limit:
             raise RuntimeError('Free storage allowance nearly full; no paid upgrade will be requested')
 
     def metadata(self, key, file_id):
@@ -119,7 +119,10 @@ class Store:
         file_id = file_id or reserved
         if file_id and self.verified(file_id, key, size, checksum):
             return {'id': file_id}
-        self.check_quota(size)
+        if key.endswith('/cleanup.json') and size <= 256*1024:
+            self.check_quota(size, reserve_bytes=0)
+        else:
+            self.check_quota(size)
         if creating and not file_id:
             file_id = drive_retry(lambda: self.client.files().generateIds(count=1, space='drive').execute())['ids'][0]
         journal.parent.mkdir(parents=True, exist_ok=True)

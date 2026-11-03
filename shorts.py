@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-VERSION = 'dudi-shorts-v3-portrait-music'
+VERSION = 'dudi-shorts-v4-layered-characters'
 
 
 def atomic_json(path, value):
@@ -64,7 +64,10 @@ def render_short(source_root, target, start=0, seconds=40):
         raise ValueError('Source video has no audio')
     from PIL import Image
     portrait = source_root / 'portrait'
-    scenes = [{'index':i} for i in range(start//5, (start+seconds)//5)]
+    song=json.loads((source_root/'song.json').read_text())
+    scenes=song['scenes'][start//5:(start+seconds)//5]
+    if [s['index'] for s in scenes] != list(range(start//5,(start+seconds)//5)):
+        raise ValueError('Short storyboard does not cover the clip')
     images = {}
     for scene in scenes:
         path = portrait / f"scene-{scene['index']:03d}-source.png"
@@ -73,7 +76,8 @@ def render_short(source_root, target, start=0, seconds=40):
                 raise ValueError('Short illustration must have native 9:16 dimensions')
             im.verify()
         images[path.name] = digest(path)
-    plan = dict(version=VERSION, portrait_images=images, source_sha256=digest(source), start=start, seconds=seconds,
+    from character_motion import VERSION as character_version
+    plan = dict(version=VERSION, character_version=character_version, portrait_images=images, source_sha256=digest(source), start=start, seconds=seconds,
                 width=1080, height=1920)
     target.mkdir(parents=True, exist_ok=True)
     manifest = target / 'render.json'

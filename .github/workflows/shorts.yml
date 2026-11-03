@@ -72,8 +72,8 @@ jobs:
       ACESTEP_INIT_LLM: 'false'
       ACESTEP_GENERATION_TIMEOUT: '18000'
       CUDA_VISIBLE_DEVICES: ''
-      OMP_NUM_THREADS: '4'
-      MKL_NUM_THREADS: '4'
+      OMP_NUM_THREADS: '3'
+      MKL_NUM_THREADS: '3'
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
     steps:
@@ -130,11 +130,13 @@ jobs:
           path: |
             output/*/short-audio/**/*.wav
             output/*/short-audio/**/*.json
+            output/*/short-audio/**/worker-resources.txt
           retention-days: 7
   short_images:
+    name: Generate portraits only when not already prepared
     if: ${{ !inputs.prepared_portraits }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -147,7 +149,7 @@ jobs:
       CLIP_SECONDS: ${{ inputs.clip_seconds || '40' }}
       SONG_RUN_ID: ${{ inputs.run_id }}
       CUDA_VISIBLE_DEVICES: ''
-      OMP_NUM_THREADS: '4'
+      OMP_NUM_THREADS: '3'
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
       CPU_IMAGE_WIDTH: '576'
@@ -190,6 +192,11 @@ jobs:
           root = Path('output')/run_id
           generate_song_images(root, json.loads((root/'song.json').read_text()))
           PY
+      - name: Prepare automatic character layers and animated scene clips
+        run: |
+          bash scripts/install-runner-packages.sh ffmpeg
+          pip install --no-cache-dir -r requirements-motion-cpu.txt
+          python -u character_motion.py --root "output/$SONG_RUN_ID"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -197,6 +204,8 @@ jobs:
           path: |
             output/*/portrait/*.png
             output/*/portrait/image-manifest-*.json
+            output/*/portrait/characters/**
+            output/*/portrait/motion/**
           retention-days: 7
   short:
     needs: [short_images, short_music]
