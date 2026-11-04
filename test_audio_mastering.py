@@ -116,6 +116,56 @@ class BoundaryRepairTests(unittest.TestCase):
             window=verify_continuity(root/'fixed.wav',40,allow_edge_trim=False)
             self.assertLess(window['edge_trim_seconds'],.1)
 
+    def test_native_overrun_supplies_active_audio_without_extra_stretch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            InternalSilenceRepairTests().source(root/'source.wav',45,[(0,5)])
+            result=master_parts([root/'source.wav'],root/'fixed.wav',40)
+            self.assertAlmostEqual(result['tempo_compensation'],1,delta=.001)
+            verify_continuity(root/'fixed.wav',40,allow_edge_trim=False)
+
+    def test_short_edge_failure_retries_with_bounded_overrun_and_recovers(self):
+        import short_music,test_short_music
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'output/test';root.mkdir(parents=True)
+            song=test_short_music.ShortMusicTests().song()
+            song['audio_mastering']='continuous-kids-mix-v3'
+            (root/'song.json').write_text(json.dumps(song))
+            durations=[]
+            def generate(request,path,state,save):
+                durations.append(request['duration'])
+                InternalSilenceRepairTests().source(path,request['duration'],[(0,5)])
+            with patch('short_music.Path',side_effect=lambda p:Path(directory)/p),patch('music_cpu.generate_segment',side_effect=generate):
+                output=short_music.prepare('test')
+            self.assertEqual(durations,[40,45])
+            verify_continuity(output,40,allow_edge_trim=False)
+            state=json.loads((output.parent/'music-state.json').read_text())
+            self.assertTrue(state['audio_ready'])
+            self.assertEqual(state['quality_attempts'][0]['code'],'excessive_edge_silence')
+            self.assertTrue((output.parent/'rejected-1.wav').exists())
+
+    def test_persistent_silence_stops_after_bounded_retries_with_diagnostics(self):
+        import short_music,test_short_music
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'output/test';root.mkdir(parents=True)
+            song=test_short_music.ShortMusicTests().song()
+            song['audio_mastering']='continuous-kids-mix-v3'
+            (root/'song.json').write_text(json.dumps(song))
+            durations=[]
+            def generate(request,path,state,save):
+                durations.append(request['duration'])
+                InternalSilenceRepairTests().source(path,request['duration'],[(0,request['duration'])])
+            with patch('short_music.Path',side_effect=lambda p:Path(directory)/p),patch('music_cpu.generate_segment',side_effect=generate):
+                with self.assertRaisesRegex(ValueError,'three quality attempts'):
+                    short_music.prepare('test')
+            self.assertEqual(durations,[40,45,50])
+            target=root/'short-audio/clip-0-40'
+            state=json.loads((target/'music-state.json').read_text())
+            self.assertEqual(state['quality_failure']['code'],'excessive_edge_silence')
+            self.assertFalse(state['audio_ready'])
+            self.assertEqual(len(list(target.glob('rejected-*.wav'))),3)
+            self.assertFalse((target/'song.wav').exists())
+
     def test_true_internal_dropout_and_excessive_outro_remain_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

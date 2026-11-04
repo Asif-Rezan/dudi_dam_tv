@@ -34,7 +34,9 @@ def verify_continuity(path,seconds,allow_edge_trim=True,allow_internal_repair=No
     native=audio_duration(path)
     if native<seconds-.1:
         raise AudioGapError(f'Audio is too short: {native:.3f}s for {seconds:.3f}s','too_short')
-    end=min(native,float(seconds))
+    # Inspect bounded native overrun before trimming; the requested prefix can
+    # contain an intro while useful audio continues beyond the delivery cutoff.
+    end=min(native,float(seconds)*(1.25 if allow_edge_trim else 1))
     result=subprocess.run(['ffmpeg','-hide_banner','-nostats','-i',str(path),'-t',str(end),
         '-af','silencedetect=noise=-45dB:d=0.10','-f','null','-'],
         check=True,capture_output=True,text=True,timeout=300)
@@ -78,7 +80,19 @@ def verify_continuity(path,seconds,allow_edge_trim=True,allow_internal_repair=No
     for a,b in internal:
         segments.append((cursor,a));cursor=b
     segments.append((cursor,trailing))
-    return dict(start=leading,end=trailing,active_seconds=active,
+    # Keep at most the requested amount of active audio. This uses overrun
+    # rather than stretching a shorter performance beyond the existing budget.
+    remaining=float(seconds)
+    kept=[]
+    for a,b in segments:
+        if remaining<=0:
+            break
+        stop=min(b,a+remaining)
+        kept.append((a,stop))
+        remaining-=stop-a
+    segments=kept
+    active=min(active,float(seconds))
+    return dict(start=segments[0][0],end=segments[-1][1],active_seconds=active,
                 source_seconds=native,edge_trim_seconds=end-(trailing-leading),
                 internal_trim_seconds=internal_seconds,repair_segments=segments)
 
