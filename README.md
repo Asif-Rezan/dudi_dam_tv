@@ -186,3 +186,10 @@ and an explicit `audio_internal_gap` diagnostic instead of a generic error.
 The 120-second part failure at 91.61–94.57 seconds is covered by a real FFmpeg
 regression including pitch and output-duration checks. Generative audio quality
 is still not guaranteed; excessive missing audio remains a visible failure.
+
+
+Manual storage maintenance is available through `manual-drive-cleanup.yml`.
+It sweeps this project's existing publication checkpoints, permanently deletes
+only media belonging to verified public HD episodes, preserves scheduled/private
+and unverified media, and saves quota plus a read-only project-folder inventory.
+It does not alter generation/publication settings or empty unrelated Drive Trash.
