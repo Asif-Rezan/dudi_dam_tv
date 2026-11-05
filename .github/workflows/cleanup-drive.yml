@@ -1,0 +1,45 @@
+name: Clean verified published media from Drive
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Audit eligible public HD episodes without deleting media
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: dudi-drive-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DRY_RUN: ${{ inputs.dry_run }}
+      YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
+      EXPECTED_CHANNEL_ID: ${{ secrets.EXPECTED_CHANNEL_ID }}
+      DRIVE_TOKEN_JSON: ${{ secrets.DRIVE_TOKEN_JSON }}
+      DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Verify public HD uploads and clean only their temporary media
+        shell: bash
+        run: |
+          if [[ "$DRY_RUN" == "true" ]]; then
+            python -u cleanup_drive.py --sweep --dry-run
+          else
+            python -u cleanup_drive.py --sweep
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: drive-cleanup-report-${{ github.run_id }}
+          path: output/drive-cleanup-report.json
+          retention-days: 7
