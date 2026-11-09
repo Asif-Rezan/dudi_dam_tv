@@ -78,7 +78,9 @@ jobs:
           RUN_ID="${REQUESTED_RUN_ID:-daily-$(TZ=Asia/Dhaka date +%F)}"
           [[ "$RUN_ID" =~ ^[a-zA-Z0-9_-]{1,80}$ ]] || exit 1
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-      - run: pip install -r requirements.txt -r requirements-lyrics.txt
+      - name: Install lyrics dependencies with CPU source fallback
+        timeout-minutes: 45
+        run: python install_lyrics_dependencies.py
       - run: python -m unittest -v
       - name: Find available recovery checkpoints
         id: recovery

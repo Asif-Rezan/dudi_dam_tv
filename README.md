@@ -1,3 +1,17 @@
+# Generation dependency recovery — 2026-11-09
+
+Run `42571184809` stopped before inference because GitHub's official CPU wheel
+asset returned HTTP 504 for `llama-cpp-python==0.3.36`. The lyrics installer now
+retries the wheel twice with bounded pip/network/process timeouts, then builds
+the exact same pinned CPU release from its PyPI source distribution. Source
+build failures still stop the job. Model, metadata and thumbnail settings are
+unchanged. No generated checkpoints exist from that failed run.
+
+Validation: 183 component tests pass, including wheel success, pinned CPU
+source fallback, and bounded failure propagation.
+
+---
+
 # Selective reference media update — 2026-11-09
 
 Reference: `Asif-Rezan/youtube-motivation-automation` at `44f8a3384a4e4e02d4f67e94929195cbe225c637` (successful run `42540767777`).
