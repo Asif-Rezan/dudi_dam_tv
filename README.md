@@ -1,3 +1,23 @@
+# Model-download/cache recovery — 2026-11-09
+
+- Failed run: `42571467173`; seven landscape animation jobs failed. Inspected
+  job `129021633668` failed downloading BiRefNet with HTTP 504.
+- Applied the verified retry/official-endpoint fallback, atomic checksum-checked
+  model downloads and revision-keyed caches from the other project's `e7e95a9`.
+- Owner-approved 10 GB policy: cache SSD-1B, Qwen and motion weights (~9.15 GiB);
+  leave music downloads runner-local and disable competing pip caches.
+- Recovery restores matching saved image shards and Shorts audio in addition to
+  lyrics/music, retaining manifest/hash checks before reusing completed work.
+- Title, description, thumbnail generation/assets, publication and account
+  behavior are preserved; twenty relevant files match the baseline exactly.
+- 191 local tests, actionlint and git diff checks pass. The dedicated cache warmup
+  workflow performs actual segmentation/inpainting CPU checks without publishing.
+- Rollback baseline `5184848`, tag `before-model-cache-2026-11-09`.
+
+[Full investigation, recovery instructions and sources](docs/model-cache-recovery.md).
+
+---
+
 # Generation dependency recovery — 2026-11-09
 
 Run `42571184809` stopped before inference because GitHub's official CPU wheel
