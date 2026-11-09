@@ -1,3 +1,18 @@
+# Media update backup — 2026-11-09
+
+Baseline: `8629765`; rollback tag: `before-reference-media-2026-11-09`.
+[Previous README](docs/archive/before-reference-media-2026-11-09-README.md).
+
+Restore tracked code without rewriting history:
+
+```sh
+git switch -c codex/restore-before-media-update
+git restore --source before-reference-media-2026-11-09 -- .
+git commit -m "Restore Dudi Dam TV before media update"
+```
+
+---
+
 # Dudi Dam TV — kids rhyme video automation
 
 Copied from [Heart-and-Mind](https://github.com/Asif-Rezan/Heart-and-Mind) at `0fca9240b5edf786f09a806401a62dcc386eb0f6`. The first repository commit is the unchanged copy. The kids adaptation retains pinned CPU music/image inference, resumable artifacts, Google account setup, verified YouTube publishing and exact-file Drive cleanup.
