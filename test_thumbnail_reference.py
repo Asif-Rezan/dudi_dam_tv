@@ -17,7 +17,7 @@ class ThumbnailReferenceTests(unittest.TestCase):
         fixture=test_kids_rhymes.KidsTests()
         fixture.setUp()
         try:
-            return fixture.song(480)
+            return fixture.song(240)
         finally:
             fixture.doCleanups()
 

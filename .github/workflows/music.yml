@@ -41,7 +41,7 @@ on:
   schedule:
     - cron: '0 21 * * *' # 03:00 Asia/Dhaka (next local day)
 env:
-  VIDEO_DURATION_SECONDS: '600'
+  VIDEO_DURATION_SECONDS: '240'
   REFERENCE_AUDIO_PATH: assets/reference/style-reference.mp3
 permissions:
   contents: read
@@ -59,7 +59,7 @@ jobs:
       restore_artifacts: ${{ steps.recovery.outputs.artifact_names || '[]' }}
     env:
       LYRICS_MODEL: Qwen/Qwen3-4B-Instruct-2507
-      OMP_NUM_THREADS: '3'
+      OMP_NUM_THREADS: '4'
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
       REQUESTED_RUN_ID: ${{ inputs.run_id }}
@@ -280,7 +280,7 @@ jobs:
       IMAGE_SHARDS: '16'
       SONG_RUN_ID: ${{ needs.lyrics.outputs.run_id }}
       CUDA_VISIBLE_DEVICES: ''
-      OMP_NUM_THREADS: '3'
+      OMP_NUM_THREADS: '4'
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
       CPU_IMAGE_WIDTH: '1024'
@@ -345,7 +345,7 @@ jobs:
       IMAGE_VARIANT: portrait
       SONG_RUN_ID: ${{ needs.lyrics.outputs.run_id }}
       CUDA_VISIBLE_DEVICES: ''
-      OMP_NUM_THREADS: '3'
+      OMP_NUM_THREADS: '4'
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
       CPU_IMAGE_WIDTH: '576'

@@ -1,4 +1,14 @@
-# Media update backup — 2026-11-09
+# Selective reference media update — 2026-11-09
+
+Reference: `Asif-Rezan/youtube-motivation-automation` at `44f8a3384a4e4e02d4f67e94929195cbe225c637` (successful run `42540767777`).
+
+- Updated video animation, 240-second default (180–300 allowed), original chorus-first lyrics, 130-BPM music, tagged verse/chorus synthesis and bounded inference-step validation.
+- Existing fixed upload titles/descriptions/tags, thumbnail reference selection, prompt recipe, resolution, denoise strength, image model, artwork and export remain intact for long videos and Shorts. Reference SEO packaging and thumbnail-to-opening replacement are deliberately excluded. New episode art is still generated normally.
+- Existing audio-silence repair, rejected-part recovery, bounded Shorts retries, lyric checkpoint retries, worker limits, upload scheduling, destination account and private storage are retained. Original hook is recorded in lyric history to reject repeated episode hooks.
+- Use fresh run IDs; old ten-minute checkpoints do not match the new duration contract.
+
+
+Validation: all 180 component tests passed, including actual FFmpeg audio/motion, silence repair, saved-part recovery, retry bounds, song structure and unchanged fixed Shorts metadata. Twenty metadata/thumbnail/account/storage files were compared byte-for-byte with the baseline. `git diff --check` passed. Full cloud inference/publication has not been run for this update.
 
 Baseline: `8629765`; rollback tag: `before-reference-media-2026-11-09`.
 [Previous README](docs/archive/before-reference-media-2026-11-09-README.md).
@@ -19,10 +29,10 @@ Copied from [Heart-and-Mind](https://github.com/Asif-Rezan/Heart-and-Mind) at `0
 
 ## Current behavior
 
-- Default: 600 seconds. Set `VIDEO_DURATION_SECONDS` to 480–720 in five-second steps.
-- Sweet adult female singing voice requested, original AI-written English verses alternating with **dudi dudi dam dam dudi dudi dam**. This phrase is a sung refrain, not musical chord notation.
-- The first lyrics job runs the pinned local Qwen3-4B CPU model to write a fresh adventure outline, new English verses, and matching visual descriptions. Only the Dudi refrain is fixed. There is no template fallback. Each run ID uses a different generation seed.
-- A new SSD-1B cartoon illustration for every five seconds (96–144 images), plus a thumbnail. Sixteen image workers split generation and checkpoint each completed image.
+- Default: 240 seconds. Set `VIDEO_DURATION_SECONDS` to 180–300 in five-second steps.
+- Sweet adult female singing voice requested, original AI-written English verses alternating with a new AI-written four-line chorus for each episode. The full chorus opens the song immediately at 130 BPM.
+- The first lyrics job runs the pinned local Qwen3-4B CPU model to write a fresh adventure outline, new English verses, and matching visual descriptions. Each episode gets an original chorus hook. There is no template fallback. Each run ID uses a different generation seed.
+- A new SSD-1B cartoon illustration for every five seconds (36–60 images), plus a thumbnail. Sixteen image workers split generation and checkpoint each completed image.
 - ACE-Step generates separate sections up to 120 seconds, then FFmpeg joins them. Music is not looped or padded. Short or incorrectly sized sections fail. Section joins and voice/character consistency need listening/viewing review.
 - A 30-second excerpt of the user-supplied MP3 is included at `assets/reference/style-reference.mp3`; the full original is not committed. The pinned API exposes `reference_audio`. Inference receives the excerpt for style conditioning; actual influence and singing quality require a model run. Set `REFERENCE_AUDIO_PATH` to a different local file or leave unset to generate without conditioning. Use reference material you have permission to use.
 - Storyboard lyrics drive image actions and the pictures change exactly every five seconds. Singing is generative: this is planned timing, **not forced alignment or transcription**. Precise word-level synchronization is not yet implemented.
@@ -31,7 +41,7 @@ Copied from [Heart-and-Mind](https://github.com/Asif-Rezan/Heart-and-Mind) at `0
 
 Run **Dudi Dam TV kids rhyme generation** from GitHub Actions with a new `run_id`. The lyrics job checks and reserves lyric originality in private Drive history; connected Drive credentials are required for the production workflow. Local generation without history can run without Google credentials. Download `kids-video-RUN_NUMBER` for the MP4, thumbnail and song/storyboard JSON. Generation is computationally expensive and has not yet been verified end to end on Actions. Existing model revisions and CPU dependencies come from the reference; 120-second sections reload the model for bounded worker isolation. Model memory/time limits may require a larger runner.
 
-Automatic scheduling is off unless repository variable `AUTOMATION_ENABLED=true`. Publishing requires `PUBLISH_ENABLED=true`. The scheduled time inherited from the reference is 03:00 Asia/Dhaka. The workflow defaults to 600 seconds; adjust `VIDEO_DURATION_SECONDS` in its workflow-level env for other durations.
+Automatic scheduling is off unless repository variable `AUTOMATION_ENABLED=true`. Publishing requires `PUBLISH_ENABLED=true`. The scheduled time inherited from the reference is 03:00 Asia/Dhaka. The workflow defaults to 240 seconds; adjust `VIDEO_DURATION_SECONDS` in its workflow-level env for other durations.
 
 For local AI lyric writing (downloads the pinned Qwen GGUF model):
 

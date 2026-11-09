@@ -5,7 +5,7 @@ import re
 import subprocess
 
 VERSION='continuous-kids-mix-v3'
-BPM=120
+BPM=130
 LOUDNESS='loudnorm=I=-14:TP=-1.5:LRA=9'
 MAX_EDGE_TRIM_RATIO=.10
 MAX_INTERNAL_TRIM_RATIO=.05

@@ -149,7 +149,7 @@ jobs:
       CLIP_SECONDS: ${{ inputs.clip_seconds || '40' }}
       SONG_RUN_ID: ${{ inputs.run_id }}
       CUDA_VISIBLE_DEVICES: ''
-      OMP_NUM_THREADS: '3'
+      OMP_NUM_THREADS: '4'
       HF_HUB_DISABLE_XET: '1'
       HF_HUB_DISABLE_IMPLICIT_TOKEN: '1'
       CPU_IMAGE_WIDTH: '576'

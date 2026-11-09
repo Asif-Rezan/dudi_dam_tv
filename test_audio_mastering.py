@@ -75,7 +75,7 @@ class MusicGapRetryTests(unittest.TestCase):
         from audio_mastering import VERSION
         fixture=test_kids_rhymes.KidsTests();fixture.setUp()
         try:
-            song=fixture.song(600)
+            song=fixture.song(240)
         finally:
             fixture.doCleanups()
         with tempfile.TemporaryDirectory() as tmp:
@@ -87,7 +87,7 @@ class MusicGapRetryTests(unittest.TestCase):
             def master(parts,path,seconds):path.write_bytes(b'final mix')
             with patch('music_cpu.generate_segment',side_effect=generate) as model,patch('audio_mastering.verify_continuity',side_effect=[AudioGapError('gap'),None,None,None,None,None]),patch('audio_mastering.master_parts',side_effect=master),patch('pipeline.duration',return_value=120),patch('kids_rhymes.subprocess.run',side_effect=normalize):
                 kids_rhymes.generate_music(song,target,state,Mock())
-            self.assertEqual(model.call_count,6)
+            self.assertEqual(model.call_count,3)
             self.assertEqual(model.call_args_list[0].args[1],model.call_args_list[1].args[1])
             self.assertEqual(state['parts']['0']['continuity_retries'],1)
             self.assertEqual(state['mastering_version'],VERSION)
@@ -248,12 +248,12 @@ class SavedPartRecoveryTests(unittest.TestCase):
     def test_rejected_candidate_is_reused_without_cpu_inference(self):
         import test_kids_rhymes,kids_rhymes
         fixture=test_kids_rhymes.KidsTests();fixture.setUp()
-        try:song=fixture.song(480)
+        try:song=fixture.song(240)
         finally:fixture.doCleanups()
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
-            for i in range(3):(root/f'part-{i:03d}.wav').write_bytes(b'good')
-            (root/'part-003.rejected-gap.wav').write_bytes(b'repairable')
+            for i in range(1):(root/f'part-{i:03d}.wav').write_bytes(b'good')
+            (root/'part-001.rejected-gap.wav').write_bytes(b'repairable')
             def normalize(args,**kwargs):shutil.copyfile(args[args.index('-i')+1],args[-1])
             def master(parts,path,seconds):path.write_bytes(b'validated master')
             state={}
@@ -262,6 +262,6 @@ class SavedPartRecoveryTests(unittest.TestCase):
                  patch('worker_limits.run_worker',side_effect=AssertionError('Unexpected AI inference')) as inference:
                 kids_rhymes.generate_music(song,root/'song.wav',state,Mock())
             inference.assert_not_called()
-            self.assertEqual(state['parts']['3']['recovered_candidate'],'part-003.rejected-gap.wav')
-            self.assertTrue(state['parts']['3']['audio_ready'])
+            self.assertEqual(state['parts']['1']['recovered_candidate'],'part-001.rejected-gap.wav')
+            self.assertTrue(state['parts']['1']['audio_ready'])
             self.assertEqual((root/'song.wav').read_bytes(),b'validated master')

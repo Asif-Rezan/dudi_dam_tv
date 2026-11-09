@@ -2,7 +2,7 @@ import math
 import unittest
 import numpy as np
 from PIL import Image, ImageDraw
-from scene_actions import plan_scene, state_at, detect_face, compose_frame, actor_parts, compose_scene, motion_prompt, background_motion, camera_viewport, actor_profile, dance_body_motion
+from scene_actions import plan_scene, state_at, detect_face, compose_frame, actor_parts, compose_scene, motion_prompt, background_motion, camera_viewport, actor_profile, dance_body_motion, DANCE_VARIANTS, draw_bubbles
 
 
 class SceneActionTests(unittest.TestCase):
@@ -13,7 +13,7 @@ class SceneActionTests(unittest.TestCase):
         self.assertEqual(starts,2)
         self.assertTrue(all(v==0 for v in samples[:210]))
         self.assertEqual([b['action'] for b in plan['beats']],
-                         ['blink','prop_enters','look','two_hops','close_up_reaction'])
+                         ['original_expression','prop_enters','look','two_hops','close_up_reaction'])
 
     def test_non_hopping_scenes_have_other_actions(self):
         for prompt,action,prop in [('child rolls a ball with puppy','approach','ball'),
@@ -174,12 +174,12 @@ class BodyDanceTests(unittest.TestCase):
 
 class VariedDanceTests(unittest.TestCase):
     def test_variety_is_repeatable_and_only_hop_scenes_jump(self):
-        plans=[plan_scene('toddlers and bunny dancing',i) for i in range(60)]
-        self.assertEqual(plans,[plan_scene('toddlers and bunny dancing',i) for i in range(60)])
-        self.assertEqual({p['dance_variant'] for p in plans},{'wave','waist','step','sway','hop'})
+        plans=[plan_scene('toddlers and bunny dancing',i) for i in range(300)]
+        self.assertEqual(plans,[plan_scene('toddlers and bunny dancing',i) for i in range(300)])
+        self.assertEqual({p['dance_variant'] for p in plans},set(DANCE_VARIANTS))
         for plan in plans:
             hops=[state_at(plan,t/25)['hop'] for t in range(125)]
-            if plan['dance_variant']=='hop':
+            if plan['dance_variant'] in ('hop','jelly','ripple_hop'):
                 self.assertGreater(max(hops),.5)
             else:
                 self.assertEqual(max(hops),0)
@@ -189,3 +189,94 @@ class VariedDanceTests(unittest.TestCase):
     def test_non_hopping_story_does_not_make_companions_jump(self):
         plan=plan_scene('child waves hello with puppy')
         self.assertTrue(all(actor_profile(plan,i,3)['movement']!='two_hops' for i in range(3)))
+
+
+class PlayfulDanceTests(unittest.TestCase):
+    def test_literal_lyrics_select_matching_move(self):
+        for prompt, variant in [('tummy wiggle','tummy'), ('belly dance','tummy'),
+                                ('jelly bounce','jelly'), ('clap hands','clap'),
+                                ('penguin walk','penguin'), ('balloons dance','balloons'),
+                                ('fireflies dance','fireflies'), ('ripple hop dance','ripple_hop'), ('spin around','sway'), ('twirl dance','sway')]:
+            with self.subTest(prompt=prompt):
+                plan=plan_scene(prompt+' 120 bpm')
+                self.assertEqual((plan['action'],plan['dance_variant']),('dance',variant))
+                self.assertEqual(plan['beat_seconds'],.5)
+
+    def test_tummy_and_clap_preserve_head_pixels_and_animate_different_regions(self):
+        image=Image.fromarray(np.random.default_rng(2).integers(0,256,(240,160,4),dtype=np.uint8))
+        original=np.asarray(image)
+        results=[]
+        for variant in ('tummy','clap','step'):
+            result=np.asarray(dance_body_motion(image,.73,variant=variant))
+            np.testing.assert_array_equal(result[:156],original[:156])
+            self.assertGreater(np.abs(result[110:].astype(float)-original[110:]).mean(),5)
+            results.append(result)
+        self.assertFalse(np.array_equal(results[0],results[1]))
+
+    def test_leader_followers_repeat_same_move_with_delayed_start(self):
+        plan=plan_scene('ripple hop dance')
+        profiles=[actor_profile(plan,i,3) for i in range(3)]
+        self.assertEqual([p['delay'] for p in profiles],[0,.35,.7])
+        self.assertEqual({p['phase'] for p in profiles},{0.})
+        self.assertEqual({p['variant'] for p in profiles},{'ripple_hop'})
+
+    def test_all_moves_render_landscape_and_portrait_without_empty_frames(self):
+        for w,h in [(160,90),(90,160)]:
+            bg=Image.new('RGBA',(w,h),'skyblue')
+            actor=Image.new('RGBA',(30,50),'coral')
+            box=(w//2-15,h-60,w//2+15,h-10)
+            for variant in DANCE_VARIANTS:
+                plan=dict(plan_scene('dance'),dance_variant=variant)
+                for t in (0,.73,2.3,4.96):
+                    frame=compose_scene(bg,[(actor,box,None)],plan,t)
+                    self.assertEqual((frame.mode,frame.size),('RGB',(w,h)))
+                    self.assertTrue(np.isfinite(np.asarray(frame)).all())
+
+    def test_bubbles_move_without_changing_opaque_background(self):
+        bg=Image.new('RGBA',(320,180),'skyblue')
+        first=np.asarray(draw_bubbles(bg,0))
+        last=np.asarray(draw_bubbles(bg,1))
+        self.assertFalse(np.array_equal(first,last))
+        self.assertEqual(last[:,:,3].min(),255)
+
+
+class NoTwirlTests(unittest.TestCase):
+    def test_rotation_cannot_be_selected_from_lyrics_or_variety(self):
+        from playful_motion_sample import MOVES
+        self.assertNotIn('twirl',DANCE_VARIANTS)
+        for prompt in ('twirl dance','spin around','rotate','rotation','spinning'):
+            self.assertEqual(plan_scene(prompt)['dance_variant'],'sway')
+        self.assertFalse(any('twirl' in label.lower() for label,_ in MOVES))
+
+
+class OriginalExpressionTests(unittest.TestCase):
+    def test_even_a_detected_face_keeps_original_eyes_and_smile(self):
+        from scene_actions import face_motion
+        image=Image.fromarray(np.random.default_rng(9).integers(0,256,(160,100,4),dtype=np.uint8))
+        rig={'eyes':[[.25,.25,.35,.35],[.6,.25,.7,.35]]}
+        for t in (.3,1.8,4.8):
+            state=state_at(plan_scene('dance'),t)
+            self.assertEqual(state['blink'],0)
+            np.testing.assert_array_equal(np.asarray(face_motion(image,rig,state)),np.asarray(image))
+
+
+class FaceSafeReplacementTests(unittest.TestCase):
+    def test_removed_effects_are_never_selected(self):
+        from playful_motion_sample import MOVES
+        self.assertTrue({'head_bob','peekaboo','follow'}.isdisjoint(DANCE_VARIANTS))
+        self.assertTrue(all(not any(old in label.lower() for old in ('head bob','peekaboo','follow the leader')) for label,_ in MOVES))
+
+    def test_rigid_replacement_sprites_are_pixel_identical_before_compositing(self):
+        image=Image.fromarray(np.random.default_rng(23).integers(0,256,(240,160,4),dtype=np.uint8))
+        for variant in ('balloons','fireflies','ripple_hop'):
+            for t in (.3,1.8,4.8):
+                np.testing.assert_array_equal(np.asarray(dance_body_motion(image,t,variant=variant)),np.asarray(image))
+
+    def test_dance_compositor_does_not_resize_or_rotate_faces(self):
+        from unittest.mock import patch
+        bg=Image.new('RGBA',(320,240),'white')
+        sprite=Image.new('RGBA',(60,120),'red')
+        for variant in DANCE_VARIANTS:
+            plan=dict(plan_scene('dance'),dance_variant=variant)
+            with patch.object(Image.Image,'rotate',side_effect=AssertionError('rotation changes portrait')), patch.object(Image.Image,'resize',side_effect=AssertionError('whole-sprite resize changes face')):
+                compose_scene(bg,[(sprite,(100,60,160,180),None)],plan,.73,camera=False,environment=False)

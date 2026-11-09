@@ -9,7 +9,11 @@ import re
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-VERSION = 'scene-stories-v5-tempo-aware-dance'
+VERSION = 'scene-stories-v10-opening-hook-two-moves'
+OPENING_SCENES = 3  # first 15 seconds
+BODY_VARIANTS = ('wave', 'waist', 'step', 'hop', 'tummy', 'jelly', 'clap', 'penguin')
+SWITCH_AT = 2.5
+DANCE_VARIANTS = ('wave', 'waist', 'step', 'sway', 'hop', 'tummy', 'jelly', 'clap', 'penguin', 'balloons', 'fireflies', 'ripple_hop')
 
 
 def smooth(value):
@@ -19,7 +23,7 @@ def smooth(value):
 
 def plan_scene(prompt, index=0):
     words = set(re.findall(r'[a-z]+', prompt.lower()))
-    if words & {'dance','dances','dancing','clap','claps','clapping','bounce','bounces','bouncing','wiggle','wiggling','twirl','twirling','stomp','stomping'}:
+    if words & {'dance','dances','dancing','clap','claps','clapping','bounce','bounces','bouncing','wiggle','wiggling','twirl','twirling','stomp','stomping','tummy','belly','jelly','penguin','peekaboo','leader','bob','flop','spin','spinning','rotate','rotation','balloons','fireflies','ripple'}:
         kind, prop, action = 'dance', None, 'dance'
     elif words & {'sleep', 'sleepy', 'sleeping', 'bed', 'night', 'moon'}:
         kind, prop, action = 'rest', 'star', 'settle'
@@ -32,13 +36,26 @@ def plan_scene(prompt, index=0):
     else:
         kind, prop, action = 'discover', 'butterfly', 'approach'
     seed=int.from_bytes(hashlib.sha256(f'{index}:{prompt}'.encode()).digest()[:8],'big')
-    variant=('wave','waist','step','sway','hop')[seed%5]
+    variant=DANCE_VARIANTS[seed % len(DANCE_VARIANTS)]
+    # Literal lyric instructions take priority over deterministic variety.
+    for cues, selected in [(('twirl','twirling','spin','spinning','rotate','rotation'),'sway'),
+                           (('tummy','belly','wiggle','wiggling'),'tummy'),
+                           (('jelly','bounce','bounces','bouncing'),'jelly'),
+                           (('clap','claps','clapping'),'clap'),
+                           (('penguin',),'penguin'), (('balloons','bob','flop'),'balloons'),
+                           (('fireflies','peekaboo'),'fireflies'), (('ripple','leader'),'ripple_hop')]:
+        if words.intersection(cues):
+            variant=selected
+            break
     tempo=re.search(r'\b(\d{2,3})\s*bpm\b',prompt,re.I)
     bpm=int(tempo.group(1)) if tempo else 100
     bpm=bpm if 30<=bpm<=300 else 100
+    # A second move halfway through gives every dance scene two distinct poses.
+    second=[v for v in BODY_VARIANTS if v!=variant][(seed>>8) % (len(BODY_VARIANTS)-1)]
     return dict(version=VERSION, kind=kind, prop=prop, action=action, dance_variant=variant,beat_seconds=60/bpm,
+                second_variant=second, opening=index<OPENING_SCENES,
                 direction=1 if index % 2 == 0 else -1,
-                beats=[dict(at=0., action='blink'), dict(at=.65, action='prop_enters'),
+                beats=[dict(at=0., action='original_expression'), dict(at=.65, action='prop_enters'),
                        dict(at=1.35, action='look'), dict(at=2.1, action=action),
                        dict(at=4.1, action='close_up_reaction')])
 
@@ -52,12 +69,12 @@ def state_at(plan, t):
             if 0 < u < 1:
                 hop = math.sin(math.pi * u)
             landing += math.exp(-((t - start - .68) / .09)**2)
-    if plan['action']=='dance' and plan.get('dance_variant','hop')=='hop':
+    if plan['action']=='dance' and plan.get('dance_variant','hop') in ('hop','jelly','ripple_hop'):
         # New episodes carry their requested tempo; old clips retain 100 BPM.
         ramp=smooth((t-.3)/.4)*smooth((5-t)/.4)
         hop=max(0.,math.sin(2*math.pi*(t-.3)/plan.get('beat_seconds',.6)))*ramp
         landing=max(0.,-math.sin(2*math.pi*(t-.3)/plan.get('beat_seconds',.6)))**6*ramp
-    blink = max(0., 1 - abs(t - .3) / .13)
+    blink = 0.
     return dict(progress=progress, hop=hop, landing=landing, blink=blink,
                 look=smooth((t - 1.35) / .5), reaction=smooth((t - 4.1) / .65),
                 direction=plan['direction'])
@@ -99,44 +116,8 @@ multiple faces. Never apply a guessed blink to a whole multi-character group.
 
 
 def face_motion(actor, rig, state):
-    if not rig:
-        return actor
-    image = actor.copy()
-    w, h = image.size
-    # Replace only the small verified eye region; eyelid color comes from fur/skin.
-    for box in rig['eyes']:
-        x0,y0,x1,y1 = [round(v*(w if i%2==0 else h)) for i,v in enumerate(box)]
-        pad = max(1, round(w*.006))
-        x0,y0,x1,y1 = max(0,x0-pad),max(0,y0-pad),min(w,x1+pad),min(h,y1+pad)
-        if state['blink'] > 0 and x1>x0 and y1>y0:
-            patch = image.crop((x0,y0,x1,y1))
-            samples=[image.getpixel((max(0,min(w-1,x)),max(0,min(h-1,y))))
-                     for x,y in [(x0-pad,(y0+y1)//2),(x1+pad,(y0+y1)//2),((x0+x1)//2,y0-3*pad)]]
-            color=max(samples,key=lambda c:sum(c[:3]) if c[3]>240 else -1)
-            lid = Image.new('RGBA',patch.size,color)
-            eye = patch.resize((patch.width,max(1,round(patch.height*(1-.96*state['blink'])))),Image.Resampling.BICUBIC)
-            lid.alpha_composite(eye,(0,(patch.height-eye.height)//2))
-            mask = Image.new('L',patch.size,0)
-            ImageDraw.Draw(mask).rounded_rectangle((1,1,patch.width-2,patch.height-2),radius=max(2,pad),fill=255)
-            mask = mask.filter(ImageFilter.GaussianBlur(max(.5,pad/2)))
-            image.paste(lid,(x0,y0),mask)
-    # Local head turn (2D puppet approximation), leaving the body and feet fixed.
-    eyes = rig['eyes']
-    cx = sum((b[0]+b[2])/2 for b in eyes)/len(eyes)*w
-    cy = sum((b[1]+b[3])/2 for b in eyes)/len(eyes)*h
-    radius = max(abs(eyes[0][0]-eyes[-1][2])*w,.22*w)
-    mesh=[]
-    def point(x,y):
-        weight=math.exp(-((x-cx)/(radius*1.1))**4-((y-cy)/(.19*h))**4)
-        dx = -.025*w*state['look']*state['direction']*weight
-        # Subtle cheek lift on the final happy reaction, retaining the original mouth.
-        cheek=math.exp(-((x-cx)/(radius*.8))**4-((y-cy-.11*h)/(.055*h))**4)
-        return x+dx, y+state['reaction']*.008*h*cheek
-    for y in range(0,h,16):
-        for x in range(0,w,16):
-            r,b=min(w,x+16),min(h,y+16)
-            mesh.append(((x,y,r,b),tuple(c for p in [point(x,y),point(x,b),point(r,b),point(r,y)] for c in p)))
-    return image.transform(image.size,Image.Transform.MESH,mesh,Image.Resampling.BICUBIC)
+    """Keep the supplied expression unchanged; no blink or cheek deformation."""
+    return actor.copy()
 
 
 def draw_prop(canvas, plan, t, anchor, travel):
@@ -204,9 +185,15 @@ def camera_viewport(size, bounds, plan, t):
     mx,my=w*.025,h*.025
     # Limit zoom for edge-to-edge/tall/portrait compositions.
     desired=1+.035*smooth(t/5)+.045*state_at(plan,t)['reaction']
+    sway=w*.004*math.sin(t*.55)
+    if plan.get('opening'):
+        # Hook: a wide shot, then a hard punch-in cut at the half beat, with a livelier pan.
+        local=t-SWITCH_AT if t>=SWITCH_AT else t
+        desired=(1.18 if t>=SWITCH_AT else 1.0)+.06*smooth(local/SWITCH_AT)
+        sway=w*.02*math.sin(t*2.4)*(1 if t<SWITCH_AT else -1)
     zoom=max(1,min(desired,w/max(1,right-left+2*mx),h/max(1,bottom-top+2*my)))
     cw,ch=w/zoom,h/zoom
-    wanted_x=(left+right)/2-cw/2+w*.004*math.sin(t*.55)
+    wanted_x=(left+right)/2-cw/2+sway
     wanted_y=(top+bottom)/2-ch/2
     low_x=max(0,right+mx-cw);high_x=min(w-cw,left-mx)
     low_y=max(0,bottom+my-ch);high_y=min(h-ch,top-my)
@@ -222,7 +209,10 @@ def apply_camera(canvas, bounds, plan, t):
 
 def actor_profile(plan, ordinal, count):
     if plan['action']=='dance':
-        return dict(movement='dance',variant=plan.get('dance_variant','hop'),delay=ordinal*.08,phase=ordinal*1.1)
+        variant=plan.get('dance_variant','hop')
+        follow=variant=='ripple_hop'
+        return dict(movement='dance',variant=variant,
+                    delay=ordinal*(.35 if follow else .08),phase=0. if follow else ordinal*1.1)
     if count==1:
         return dict(movement=plan['action'],delay=0.,phase=0.)
     if plan['action']=='settle':
@@ -232,21 +222,32 @@ def actor_profile(plan, ordinal, count):
     return dict(movement=movement,delay=ordinal*.22,phase=ordinal*1.7)
 
 
-def dance_body_motion(subject, t, phase=0., variant='hop', beat_seconds=.6):
+GAINS = {
+    'wave':(1.4,.15,.3),'waist':(.25,.15,1.5),
+    'step':(.3,1.4,.4),'sway':(.25,.15,.7),
+    'hop':(.7,.7,.6), 'tummy':(.45,.25,2.1), 'jelly':(.7,.6,1.),
+    'clap':(1.2,1.,.45), 'penguin':(.8,1.3,.6),
+}
+
+
+def dance_body_motion(subject, t, phase=0., variant='hop', beat_seconds=.6, second=None, energy=1.):
     """Small continuous image deformations, preserving the head and artwork.
 
     This is deliberately a gentle dance, not inferred joints: side regions wave,
     lower regions alternate steps, and the middle sways without cutting limbs.
     """
     ramp=smooth(t/.4)
+    if variant in ('balloons','fireflies','ripple_hop'):
+        return subject.copy()
     if ramp==0:
         return subject.copy()
     w,h=subject.size
-    arm_gain,leg_gain,waist_gain={
-        'wave':(1.4,.15,.3),'waist':(.25,.15,1.5),
-        'step':(.3,1.4,.4),'sway':(.25,.15,.7),
-        'hop':(.7,.7,.6),
-    }.get(variant,(.7,.7,.6))
+    first_gains=GAINS.get(variant,(.7,.7,.6))
+    mix=smooth((t-SWITCH_AT+.15)/.3) if second in GAINS else 0.
+    second_gains=GAINS.get(second,first_gains)
+    arm_gain,leg_gain,waist_gain=(energy*((1-mix)*a+mix*b) for a,b in zip(first_gains,second_gains))
+    if mix>.5:
+        variant=second
     beat=2*math.pi*t/beat_seconds+phase
     mesh=[]
     def point(x,y):
@@ -262,14 +263,64 @@ def dance_body_motion(subject, t, phase=0., variant='hop', beat_seconds=.6):
                      .014*math.sin(beat)*side*legs)
         dy=h*ramp*(.018*math.sin(beat+side*1.2)*arms+
                      .014*math.sin(beat+side*1.5)*legs)
-        return x+dx,y+dy
+        if variant=='tummy':
+            belly=math.exp(-((u-.5)/.35)**4-((v-.65)/.16)**4)
+            dx+=w*.024*ramp*math.sin(beat)*belly
+            dy+=h*.009*ramp*math.cos(beat)*belly
+        elif variant=='clap':
+            # Upper-side artwork moves inward on each clap; feet alternate steps.
+            dx+=w*.065*ramp*side*arms*(.5-.5*math.cos(beat))
+        gate=smooth((v-.65)/.12)
+        return x+dx*gate,y+dy*gate
     for y in range(0,h,12):
         for x in range(0,w,12):
             r,b=min(w,x+12),min(h,y+12)
             mesh.append(((x,y,r,b),tuple(c for pt in [point(x,y),point(x,b),point(r,b),point(r,y)] for c in pt)))
     result=subject.transform(subject.size,Image.Transform.MESH,mesh,Image.Resampling.BICUBIC)
-    result.paste(subject.crop((0,0,w,round(h*.28))),(0,0))
+    result.paste(subject.crop((0,0,w,round(h*.65))),(0,0))
     return result
+
+
+def draw_bubbles(canvas, t):
+    """Sparse slow background bubbles, composited behind the cast."""
+    w,h=canvas.size
+    overlay=Image.new('RGBA',canvas.size)
+    draw=ImageDraw.Draw(overlay)
+    for i in range(7):
+        radius=max(3,round(min(w,h)*(.012+.003*(i%3))))
+        x=w*((i+.5)/7+.015*math.sin(t*.9+i))
+        y=h*(1.12-((t*.085+i*.157)%1.3))
+        draw.ellipse((x-radius,y-radius,x+radius,y+radius),
+                     outline=(185,225,255,150),width=max(1,round(radius*.12)))
+        draw.arc((x-radius*.6,y-radius*.6,x+radius*.6,y+radius*.6),
+                 205,280,fill=(255,255,255,190),width=max(1,round(radius*.15)))
+    return Image.alpha_composite(canvas.convert('RGBA'),overlay)
+
+
+def draw_environment_effect(canvas, plan, t):
+    canvas=draw_bubbles(canvas,t)
+    variant=plan.get('dance_variant')
+    if variant not in ('balloons','fireflies'):
+        return canvas
+    w,h=canvas.size
+    layer=Image.new('RGBA',canvas.size)
+    d=ImageDraw.Draw(layer)
+    if variant=='balloons':
+        for i,color in enumerate(((255,154,178,210),(156,204,255,210),(255,215,113,210))):
+            x=w*(.12+i*.36)+w*.018*math.sin(t*1.2+i)
+            y=h*(.95-((t*.12+i*.31)%1.25))
+            r=min(w,h)*.055
+            d.line((x,y+r,x+r*.15,y+r*3),fill=(210,218,230,190),width=1)
+            d.ellipse((x-r*.75,y-r,x+r*.75,y+r),fill=color)
+            d.arc((x-r*.5,y-r*.7,x+r*.35,y+r*.5),185,265,fill=(255,255,255,220),width=2)
+    else:
+        for i in range(12):
+            x=w*(.06+(i*.173)% .88)+w*.025*math.sin(t*.8+i)
+            y=h*(.15+(i*.227)%.68)+h*.025*math.cos(t+i)
+            radius=min(w,h)*(.005+.004*(.5+.5*math.sin(t*2+i)))
+            d.ellipse((x-radius*2,y-radius*2,x+radius*2,y+radius*2),fill=(255,226,120,45))
+            d.ellipse((x-radius,y-radius,x+radius,y+radius),fill=(255,244,176,210))
+    return Image.alpha_composite(canvas.convert('RGBA'),layer)
 
 
 def compose_frame(bg, subject, bbox, plan, t, rig=None, camera=True, prop=True, profile=None):
@@ -287,34 +338,30 @@ def compose_frame(bg, subject, bbox, plan, t, rig=None, camera=True, prop=True, 
     # Group members stay within their own space instead of sliding together.
     travel=direction*min(w*.10,room_right if direction>0 else room_left) if movement=='approach' else 0
     lift=state['hop']*min(h*.055,max(0,bbox[1]*.35))
-    stretch=1+.035*state['hop']-.035*state['landing']
     angle=0.
-    if movement=='settle':
-        stretch-=.025*state['progress']
-    elif movement=='dance':
-        pulse=math.sin(2*math.pi*local_t/local_plan.get('beat_seconds',.6)+profile['phase'])*smooth(local_t/.4)
-        angle=3.0*pulse
-        stretch+=.015*pulse
-    elif movement in ('sway','nod'):
-        pulse=math.sin(local_t*(2.4 if movement=='sway' else 3.2)+profile['phase'])
-        # Ramp in from the original pose; every actor starts on its own beat.
-        pulse*=smooth(local_t/.45)
-        if movement=='sway':
-            angle=2.2*pulse
-        else:
-            stretch+=.018*pulse
+    if movement=='dance':
+        beat=2*math.pi*local_t/local_plan.get('beat_seconds',.6)+profile['phase']
+        pulse=math.sin(beat)*smooth(local_t/.4)
+        bounce=2.2 if plan.get('opening') else 1.
+        lift+=min(h*.012*bounce,max(0,bbox[1]*.15))*(.5-.5*math.cos(beat))*smooth(local_t/.4)
+        if local_plan['dance_variant']=='penguin':
+            travel=min(w*.018,room_left,room_right)*pulse
+    elif movement=='sway':
+        angle=2.2*math.sin(local_t*2.4+profile['phase'])*smooth(local_t/.45)
+    # Keep original sprite proportions: never squeeze, stretch or rotate dancers.
     actor=face_motion(subject,rig,state)
     if movement=='dance':
-        actor=dance_body_motion(actor,local_t,profile['phase'],local_plan['dance_variant'],local_plan.get('beat_seconds',.6))
-    aw=max(1,round(subject.width/stretch**.4));ah=max(1,round(subject.height*stretch))
-    actor=actor.resize((aw,ah),Image.Resampling.BICUBIC)
+        actor=dance_body_motion(actor,local_t,profile['phase'],local_plan['dance_variant'],local_plan.get('beat_seconds',.6),
+                                second=plan.get('second_variant'),energy=1.5 if plan.get('opening') else 1.)
     if angle:
         actor=actor.rotate(angle,Image.Resampling.BICUBIC,expand=True)
     actor.thumbnail((w,h),Image.Resampling.BICUBIC)
-    cx=(bbox[0]+bbox[2])/2+travel*state['progress']
+    cx=(bbox[0]+bbox[2])/2+travel*(1 if movement=='dance' else state['progress'])
     x=max(0,min(w-actor.width,round(cx-actor.width/2)))
     y=max(0,min(h-actor.height,round(bbox[3]-actor.height-lift)))
     canvas=background_motion(bg,t).convert('RGBA') if camera else bg.copy().convert('RGBA')
+    if camera and plan['kind']=='dance':
+        canvas=draw_environment_effect(canvas,plan,t)
     shadow=Image.new('RGBA',bg.size)
     d=ImageDraw.Draw(shadow)
     radius=subject.width*.28*(1-.25*state['hop'])
@@ -374,6 +421,8 @@ def compose_scene(bg, parts, plan, t, camera=True, environment=True):
         subject,bbox,rig=parts[0]
         return compose_frame(bg,subject,bbox,plan,t,rig)
     canvas=background_motion(bg,t) if environment else bg.copy()
+    if environment and plan['kind']=='dance':
+        canvas=draw_environment_effect(canvas,plan,t)
     w,h=bg.size
     left=min(p[1][0]-p[0].width*.04 for p in parts)
     top=min(p[1][1] for p in parts)-h*.08

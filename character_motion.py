@@ -14,7 +14,9 @@ import subprocess
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
 
-VERSION = 'dudi-layered-characters-v11-tempo-aware-dance'
+VERSION = 'dudi-layered-characters-v16-opening-hook'
+# Extraction has not changed; retain verified expensive clean plates.
+LAYER_VERSION = 'dudi-layered-characters-v11-tempo-aware-dance'
 FPS, SECONDS = 25, 5
 _SESSION = None
 _LAMA = None
@@ -90,7 +92,7 @@ def clean_plate(image,mask):
 
 def prepare_layers(source,folder,extract=mask_for,inpaint=clean_plate):
     folder.mkdir(parents=True,exist_ok=True)
-    identity={'version':VERSION,'source_sha256':digest(source),'mask_model':'birefnet-general-lite','inpaint':'big-lama-v0.1.0'}
+    identity={'version':LAYER_VERSION,'source_sha256':digest(source),'mask_model':'birefnet-general-lite','inpaint':'big-lama-v0.1.0'}
     record=folder/'layers.json'
     if record.exists():
         try:
@@ -199,9 +201,9 @@ def render_clip(source,target,width=1920,height=1080,index=0,prompt=''):
         'story_plan':plan,'camera_motion':'continuous-safe-zoom-pan','background_motion':'sky-parallax-foliage-sway',
         'actor_profiles':[actor_profile(plan,i,len(parts)) for i in range(len(parts))],
         'story_plan_version':plan['version'],'actor_count':len(parts),'face_rigs':[part[2] for part in parts],
-        'facial_motion':any(part[2] for part in parts),
+        'facial_motion':False,
         'body_motion':'gentle-local-arms-legs-waist' if plan['action']=='dance' else None,
-        'facial_note':'2D blink, head turn and cheek lift' if rig else 'No confident single face; original face preserved'})
+        'facial_note':'Original face preserved; blink and smile deformation disabled'})
     return target
 
 
@@ -240,6 +242,11 @@ def verify_clip(path,width,height):
     subprocess.run(['ffmpeg','-v','error','-xerror','-i',str(path),'-f','null','-'],check=True)
 
 
+def clip_source(artwork, song, index, portrait=False):
+    """Use the episode scene; the existing thumbnail remains independently generated."""
+    return Path(artwork)/f'scene-{index:03d}-source.png'
+
+
 def prepare_shard(root):
     song=json.loads((root/'song.json').read_text())
     portrait=os.getenv('IMAGE_VARIANT')=='portrait'
@@ -253,7 +260,7 @@ def prepare_shard(root):
     width,height=(1080,1920) if portrait else (1920,1080)
     for plan in entries:
         index=int(plan['kind'].split('-')[1])
-        source=artwork/f"{plan['kind']}-source.png"
+        source=clip_source(artwork,song,index,portrait)
         target=artwork/'motion'/f'clip-{index:03d}.mp4'
         prompt=motion_prompt(song['scenes'][index])
         if not cached_clip(source,target,width,height,index,prompt):
