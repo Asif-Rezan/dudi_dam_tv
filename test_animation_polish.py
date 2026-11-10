@@ -1,5 +1,6 @@
 import json
 import math
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -52,6 +53,7 @@ class AnimationPolishTests(unittest.TestCase):
             for x,y,r,b in boxes:
                 self.assertTrue(x<=bounds[0] and y<=bounds[1] and r>=bounds[2] and b>=bounds[3])
 
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg runtime required')
     def test_real_dissolve_keeps_five_seconds_and_cache_reuses_output(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);old=root/'old.mp4';new=root/'new.mp4';out=root/'blend.mp4'

@@ -103,6 +103,11 @@ jobs:
       - name: Install lyrics dependencies with CPU source fallback
         timeout-minutes: 45
         run: python install_lyrics_dependencies.py
+      - name: Install media tools before regression tests
+        run: |
+          bash scripts/install-runner-packages.sh ffmpeg
+          ffmpeg -version
+          ffprobe -version
       - run: python -m unittest -v
       - uses: ./.github/actions/model-cache
         with:

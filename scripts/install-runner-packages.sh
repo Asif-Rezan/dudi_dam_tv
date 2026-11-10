@@ -34,6 +34,36 @@ apt_options=(
   -o Acquire::http::Timeout=20
   -o Acquire::https::Timeout=20
 )
-sudo timeout --kill-after=15s 180s apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
-sudo env DEBIAN_FRONTEND=noninteractive timeout --kill-after=15s 300s \
-  apt-get "${apt_options[@]}" install -y --no-install-recommends "${missing[@]}"
+# Hosted runner images often already contain usable package indexes. Avoid a
+# costly global refresh when the requested packages can be installed directly.
+install_packages() {
+  sudo env DEBIAN_FRONTEND=noninteractive timeout --kill-after=15s 300s \
+    apt-get "${apt_options[@]}" install -y --no-install-recommends "${missing[@]}"
+}
+if install_packages; then
+  exit 0
+fi
+
+# Only Ubuntu repositories are needed for these OS media tools. Avoid refreshing
+# unrelated Microsoft/Docker/etc. repositories, without deleting their config.
+index_sources=''
+if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+  index_sources="$(mktemp -d)"
+  trap 'rm -rf "$index_sources"' EXIT
+  chmod 755 "$index_sources"
+  cp /etc/apt/sources.list.d/ubuntu.sources "$index_sources/ubuntu.sources"
+  chmod 644 "$index_sources/ubuntu.sources"
+  apt_options+=(-o Dir::Etc::sourcelist=/dev/null -o "Dir::Etc::sourceparts=$index_sources")
+fi
+apt_options+=(-o Acquire::Languages=none)
+for attempt in 1 2; do
+  echo "Refreshing Ubuntu package indexes (attempt $attempt/2)"
+  if sudo timeout --kill-after=15s 240s apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update; then
+    if install_packages; then
+      exit 0
+    fi
+  fi
+  echo "Package refresh/install attempt $attempt failed; preserving diagnostics."
+done
+echo 'Unable to install required media tools after bounded recovery attempts.' >&2
+exit 1
