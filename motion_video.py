@@ -5,10 +5,47 @@ from pathlib import Path
 import subprocess
 from PIL import Image
 
-VERSION = 'storybook-scene-stories-v5-hd-thumbnail'
+VERSION = 'storybook-scene-stories-v6-fixed-duration-dissolves'
 FPS = 25
 SCENE_SECONDS = 5
-TRANSITION = .28
+TRANSITION = .16
+
+
+def transition_clip(previous, current, target, width, height):
+    """Dissolve a held outgoing frame into the incoming shot, without time loss.
+
+    Process only two clips at once; neither lyric timing nor music is shifted.
+    """
+    from character_motion import verify_clip
+    identity=dict(version=VERSION,previous=digest(previous),current=digest(current),
+                  seconds=SCENE_SECONDS,transition=TRANSITION,width=width,height=height,fps=FPS)
+    record=target.with_suffix('.json')
+    if target.exists() and record.exists():
+        try:
+            saved=json.loads(record.read_text())
+            if saved.get('identity')==identity and saved.get('sha256')==digest(target):
+                verify_clip(target,width,height)
+                return target
+        except (OSError,ValueError):
+            pass
+    temp=target.with_suffix('.tmp.mp4')
+    graph=(f'[0:v]trim=start={SCENE_SECONDS-1/FPS},setpts=PTS-STARTPTS,'
+           f'tpad=stop_mode=clone:stop_duration={TRANSITION},fps={FPS},settb=AVTB[a];'
+           f'[1:v]setpts=PTS-STARTPTS,fps={FPS},settb=AVTB[b];'
+           f'[a][b]xfade=transition=fade:duration={TRANSITION}:offset=0,format=yuv420p[v]')
+    try:
+        run_ffmpeg(['-i',str(previous),'-i',str(current),'-filter_complex_threads','1',
+                    '-filter_complex',graph,'-map','[v]','-an','-frames:v',str(FPS*SCENE_SECONDS),
+                    '-c:v','libx264','-threads','4','-preset','fast','-crf','20',
+                    '-movflags','+faststart',str(temp)])
+        verify_clip(temp,width,height)
+        temp.replace(target)
+        scratch=record.with_suffix('.tmp.json')
+        scratch.write_text(json.dumps(dict(identity=identity,sha256=digest(target))))
+        scratch.replace(record)
+    finally:
+        temp.unlink(missing_ok=True)
+    return target
 
 
 def digest(path):
@@ -61,8 +98,11 @@ def render_scenes(root, scenes, width=1920, height=1080, song=None):
             raise RuntimeError(f'Scene {index} needs current character-motion clips; regenerate its image shard')
         verify_clip(target,width,height)
         clips.append(target)
+    stitched=[clips[0]] if clips else []
+    for previous,current in zip(clips,clips[1:]):
+        stitched.append(transition_clip(previous,current,work/('transition-'+current.name),width,height))
     listing=work/'clips.txt'
-    listing.write_text(''.join(f"file '{p.name}'\n" for p in clips))
+    listing.write_text(''.join(f"file '{p.name}'\n" for p in stitched))
     return listing
 
 

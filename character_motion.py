@@ -14,7 +14,7 @@ import subprocess
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
 
-VERSION = 'dudi-layered-characters-v16-opening-hook'
+VERSION = 'dudi-layered-characters-v19-purposeful-interactions'
 # Extraction has not changed; retain verified expensive clean plates.
 LAYER_VERSION = 'dudi-layered-characters-v11-tempo-aware-dance'
 FPS, SECONDS = 25, 5
@@ -171,7 +171,7 @@ def render_clip(source,target,width=1920,height=1080,index=0,prompt=''):
     # Compose at native generation resolution, then upscale once in FFmpeg.
     # This bounds CPU work and preserves the same 1080p output as production.
     native=bg.size
-    from scene_actions import plan_scene, actor_parts, compose_scene, actor_profile
+    from scene_actions import plan_scene, actor_parts, compose_scene, actor_profile, stage_scene
     plan=plan_scene(prompt,index)
     parts=actor_parts(fg,split_touching=plan['kind']=='dance')
     rig=parts[0][2] if len(parts)==1 else None
@@ -197,11 +197,14 @@ def render_clip(source,target,width=1920,height=1080,index=0,prompt=''):
     atomic_json(target.with_suffix('.json'),{'identity':clip_identity(source,width,height,index,prompt),
         'video_sha256':digest(target),'layers':layers,'passed':True,
         'story_plan':plan,'camera_motion':'continuous-safe-zoom-pan','background_motion':'sky-parallax-foliage-sway',
-        'actor_profiles':[actor_profile(plan,i,len(parts)) for i in range(len(parts))],
+        'actor_profiles':[dict(profile,role=local.get('role'),target_actor=local.get('target_actor'),
+            route_dx=local.get('route_dx'),prop_target=local.get('prop_target'))
+            for local,profile in stage_scene(plan,parts,native)],
         'story_plan_version':plan['version'],'actor_count':len(parts),'face_rigs':[part[2] for part in parts],
-        'facial_motion':False,
-        'body_motion':'gentle-local-arms-legs-waist' if plan['action']=='dance' else None,
-        'facial_note':'Original face preserved; blink and smile deformation disabled'})
+        'facial_motion':any(part[2] for part in parts),
+        'interaction':plan.get('intent'),'movement_purpose':plan.get('purpose'),
+        'body_motion':'purposeful-approach-follow-with-world-space-foot-plant' if plan['action']=='dance' else None,
+        'facial_note':'Original expression preserved; conservative eye-pair blink only'})
     return target
 
 

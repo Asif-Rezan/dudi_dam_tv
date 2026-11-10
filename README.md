@@ -252,3 +252,12 @@ It sweeps this project's existing publication checkpoints, permanently deletes
 only media belonging to verified public HD episodes, preserves scheduled/private
 and unverified media, and saves quota plus a read-only project-folder inventory.
 It does not alter generation/publication settings or empty unrelated Drive Trash.
+
+
+### 2026-11-10 — purposeful animation and final music continuity fix
+
+Rollback source before this update: `b598021`. Ported the motivation project's purposeful movement: approach a waiting friend, follow a leader with staggered timing, or move toward a visible ball. Ordinary dancing stays local. Routes respect available room, waiting actors stay still, and planted feet compensate body travel. Added beat-aligned pose blending, conservative eye blinks, continuous camera motion and 160 ms scene dissolves without shortening five-second scenes. Both landscape and portrait rendering use the updated engine. See [animation details](docs/animation-effects.md). Title, description and thumbnail generation remain as before; existing verified model downloads and caches are retained.
+
+Run `42748571616` repaired a 2.7447-second music gap but failed strict final validation on a 0.67-second pause at 212.67–213.34 seconds. Previously, pauses just below 0.65 seconds could escape source repair and grow past that limit during duration compensation. Mastering v4 repairs source pauses from 0.50 seconds, reserving margin for the existing maximum tempo compensation, while keeping the final 0.65-second rejection threshold strict. The 3.5-second per-gap, 5% total internal repair and 10% duration budgets remain enforced. Continuous mastering now uses native parts before prefix truncation; rejected candidates and accepted parts remain recoverable with at most three quality attempts per affected part.
+
+Validation includes real FFmpeg reproduction of the near-threshold pause expanding during a 240-second mix, strict final continuity/duration verification, unsafe-gap rejection, candidate recovery, movement roles, grounded feet, camera bounds and duration-preserving transitions. Already running workflows retain their original commit; new runs use these updates.

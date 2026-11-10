@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 import subprocess
 
-VERSION='continuous-kids-mix-v3'
+VERSION='continuous-kids-mix-v4'
 BPM=130
 LOUDNESS='loudnorm=I=-14:TP=-1.5:LRA=9'
 MAX_EDGE_TRIM_RATIO=.10
@@ -19,7 +19,7 @@ class AudioGapError(RuntimeError):
 
 
 def uses_continuous_mix(song):
-    return song.get('audio_mastering') in ('continuous-kids-mix-v1','continuous-kids-mix-v2',VERSION)
+    return song.get('audio_mastering') in ('continuous-kids-mix-v1','continuous-kids-mix-v2','continuous-kids-mix-v3',VERSION)
 
 
 def audio_duration(path):
@@ -60,7 +60,9 @@ def verify_continuity(path,seconds,allow_edge_trim=True,allow_internal_repair=No
             leading=max(leading,b)
         elif b>=end-.02:
             trailing=min(trailing,a)
-        elif b-a>=.65:
+        # Repair before tempo compensation can stretch a near-threshold pause
+        # past the strict 0.65s limit (maximum duration stretch is 1 / 0.9).
+        elif b-a>=(.50 if allow_internal_repair else .65):
             internal.append((a,b))
     internal_seconds=sum(b-a for a,b in internal)
     active=trailing-leading-internal_seconds

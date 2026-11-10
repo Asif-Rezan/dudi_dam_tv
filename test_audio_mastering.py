@@ -236,6 +236,22 @@ class InternalSilenceRepairTests(unittest.TestCase):
             chunk=samples[44100:88200];spectrum=np.abs(np.fft.rfft(chunk))
             self.assertAlmostEqual(np.argmax(spectrum),440,delta=3)
 
+    def test_subthreshold_pause_cannot_grow_into_final_master_dropout(self):
+        # Reproduce the failure mechanism: an untreated <0.65s pause becomes
+        # >0.65s after pitch-preserving duration compensation.
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            self.source(root/'a.wav',120,[(0,4),(116,120)])
+            self.source(root/'b.wav',120,[(0,4),(70,72.7447),(92.67,93.31),(116,120)])
+            window=verify_continuity(root/'b.wav',120)
+            self.assertAlmostEqual(window['internal_trim_seconds'],3.3847,delta=.01)
+            result=master_parts([root/'a.wav',root/'b.wav'],root/'fixed.wav',240)
+            self.assertGreaterEqual(result['tempo_compensation'],.9)
+            strict=verify_continuity(root/'fixed.wav',240,allow_edge_trim=False)
+            self.assertEqual(strict['internal_trim_seconds'],0)
+            with wave.open(str(root/'fixed.wav')) as audio:
+                self.assertAlmostEqual(audio.getnframes()/audio.getframerate(),240,delta=.1)
+
     def test_large_single_gap_and_excessive_total_gaps_are_not_repaired(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

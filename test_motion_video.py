@@ -14,7 +14,8 @@ class MotionTests(unittest.TestCase):
             for scene in scenes:
                 Image.new('RGB',(32,18),'yellow').save(root/f"scene-{scene['index']:03d}-source.png")
             with patch('character_motion.cached_clip',return_value=True) as cached, \
-                 patch('character_motion.verify_clip') as verified:
+                 patch('character_motion.verify_clip') as verified, \
+                 patch('motion_video.transition_clip',side_effect=lambda previous,current,*args:current):
                 listing=render_scenes(root,scenes,320,180)
             self.assertEqual(cached.call_count,3)
             self.assertEqual(verified.call_count,3)
